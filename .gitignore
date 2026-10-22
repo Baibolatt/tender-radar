@@ -1,0 +1,20 @@
+# environment
+.venv/
+env/
+*.egg-info/
+
+# python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# generated artefacts
+data/cache/
+charts/
+reports/
+*.png
+
+# editors / OS
+.vscode/
+.idea/
+.DS_Store
