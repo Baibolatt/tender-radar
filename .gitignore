@@ -1,0 +1,26 @@
+# Секреты и локальные данные
+.env
+.env.*
+!.env.example
+
+# Окружение Python
+.venv/
+
+# Кэши
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# База и логи
+*.db
+*.db-wal
+*.db-shm
+logs/
+data/
+
+# Редакторы и ОС
+.vscode/
+.idea/
+.DS_Store

@@ -1,0 +1,111 @@
+{
+  "store_code": "TR",
+  "store_name": "Цветочный магазин в Таразе",
+  "bouquets": [
+    {
+      "name": "Мини-букет",
+      "description": "5 роз с зеленью. Небольшой букет для приятного повода.",
+      "price_kzt": 5500,
+      "is_available": true,
+      "sort_order": 1
+    },
+    {
+      "name": "Весенние тюльпаны",
+      "description": "15 тюльпанов в весенней упаковке.",
+      "price_kzt": 8500,
+      "is_available": true,
+      "sort_order": 2
+    },
+    {
+      "name": "Полевой микс",
+      "description": "Ромашки, зелень и полевые цветы в крафтовой бумаге.",
+      "price_kzt": 7500,
+      "is_available": true,
+      "sort_order": 3
+    },
+    {
+      "name": "Солнечный день",
+      "description": "9 подсолнухов с зеленью. Яркий летний букет.",
+      "price_kzt": 9500,
+      "is_available": true,
+      "sort_order": 4
+    },
+    {
+      "name": "Хризантемы",
+      "description": "9 белых хризантем в нежной упаковке.",
+      "price_kzt": 10000,
+      "is_available": true,
+      "sort_order": 5
+    },
+    {
+      "name": "11 роз",
+      "description": "11 красных роз в классической упаковке.",
+      "price_kzt": 11000,
+      "is_available": true,
+      "sort_order": 6
+    },
+    {
+      "name": "Орхидея в горшке",
+      "description": "Белая орхидея в керамическом горшке.",
+      "price_kzt": 12500,
+      "is_available": true,
+      "sort_order": 7
+    },
+    {
+      "name": "15 роз",
+      "description": "15 красных роз с зеленью и лентой.",
+      "price_kzt": 15000,
+      "is_available": true,
+      "sort_order": 8
+    },
+    {
+      "name": "Белые розы",
+      "description": "15 белых роз в белой упаковке.",
+      "price_kzt": 17000,
+      "is_available": true,
+      "sort_order": 9
+    },
+    {
+      "name": "Пионы",
+      "description": "11 розовых пионов в пастельной упаковке.",
+      "price_kzt": 19000,
+      "is_available": true,
+      "sort_order": 10
+    },
+    {
+      "name": "Пастель",
+      "description": "21 роза в пастельных оттенках.",
+      "price_kzt": 21000,
+      "is_available": true,
+      "sort_order": 11
+    },
+    {
+      "name": "25 роз",
+      "description": "25 красных роз в премиальной упаковке.",
+      "price_kzt": 24000,
+      "is_available": true,
+      "sort_order": 12
+    },
+    {
+      "name": "Премиум-букет",
+      "description": "Авторский букет из роз, пионов и зелени.",
+      "price_kzt": 35000,
+      "is_available": true,
+      "sort_order": 13
+    },
+    {
+      "name": "51 роза",
+      "description": "51 красная роза. Большой букет для особого случая.",
+      "price_kzt": 45000,
+      "is_available": true,
+      "sort_order": 14
+    },
+    {
+      "name": "101 роза",
+      "description": "101 красная роза в большой упаковке.",
+      "price_kzt": 85000,
+      "is_available": true,
+      "sort_order": 15
+    }
+  ]
+}
