@@ -5,7 +5,7 @@ from pathlib import Path
 
 from aiohttp import web
 
-from db.repositories import OrderRepository, StoreRepository
+from db.repositories import HandoffRepository, OrderRepository, StoreRepository
 from web import statuses
 from web.auth import (
     SESSION_COOKIE,
@@ -41,6 +41,22 @@ ORDER_FIELDS = (
 def order_to_json(row: dict) -> dict:
     """Оставляет только ключи контракта."""
     return {key: row.get(key) for key in ORDER_FIELDS}
+
+
+# Ключи JSON обращения, которые видит фронтенд.
+HANDOFF_FIELDS = (
+    "id",
+    "client_chat_id",
+    "client_name",
+    "reason",
+    "last_message",
+    "status",
+    "created_at",
+)
+
+
+def handoff_to_json(row: dict) -> dict:
+    return {key: row.get(key) for key in HANDOFF_FIELDS}
 
 
 async def _store_id(app: web.Application) -> int:
@@ -139,6 +155,29 @@ async def statuses_list(request: web.Request) -> web.Response:
     return web.json_response({"statuses": statuses.STATUSES})
 
 
+async def handoffs_list(request: web.Request) -> web.Response:
+    """Список обращений флористу. status — new/resolved/all."""
+    store_id = await _store_id(request.app)
+    status = request.query.get("status") or "all"
+    rows = await HandoffRepository(request.app[DB]).list(
+        store_id, status=None if status == "all" else status
+    )
+    return web.json_response({"handoffs": [handoff_to_json(row) for row in rows]})
+
+
+async def resolve_handoff(request: web.Request) -> web.Response:
+    """Отмечает обращение решённым."""
+    try:
+        handoff_id = int(request.match_info["id"])
+    except (KeyError, ValueError):
+        return web.json_response({"error": "обращение не найдено"}, status=404)
+
+    row = await HandoffRepository(request.app[DB]).resolve(handoff_id)
+    if row is None:
+        return web.json_response({"error": "обращение не найдено"}, status=404)
+    return web.json_response({"handoff": handoff_to_json(row)})
+
+
 async def _orders_fingerprint(app: web.Application, store_id: int) -> tuple:
     """Отпечаток состояния заказов магазина для SSE."""
     cursor = await app[DB].connection.execute(
@@ -155,8 +194,24 @@ async def _orders_fingerprint(app: web.Application, store_id: int) -> tuple:
     return (int(row["total"]), int(row["max_id"]), row["max_updated"])
 
 
+async def _handoffs_fingerprint(app: web.Application, store_id: int) -> tuple:
+    """Отпечаток состояния обращений для SSE."""
+    cursor = await app[DB].connection.execute(
+        """
+        SELECT COUNT(*) AS total,
+               COALESCE(MAX(id), 0) AS max_id,
+               COALESCE(MAX(updated_at), '') AS max_updated
+        FROM handoffs
+        WHERE store_id = ?
+        """,
+        (store_id,),
+    )
+    row = await cursor.fetchone()
+    return (int(row["total"]), int(row["max_id"]), row["max_updated"])
+
+
 async def events(request: web.Request) -> web.StreamResponse:
-    """SSE: сообщает панели, что заказы изменились."""
+    """SSE: сообщает панели, что заказы или обращения изменились."""
     store_id = await _store_id(request.app)
 
     response = web.StreamResponse()
@@ -164,15 +219,21 @@ async def events(request: web.Request) -> web.StreamResponse:
     response.headers["Cache-Control"] = "no-cache"
     await response.prepare(request)
 
-    last = None
+    last_orders = None
+    last_handoffs = None
     ticks = 0
     try:
         while True:
-            fingerprint = await _orders_fingerprint(request.app, store_id)
-            # На первом заходе только запоминаем состояние, без refresh.
-            if last is not None and fingerprint != last:
+            orders_fp = await _orders_fingerprint(request.app, store_id)
+            handoffs_fp = await _handoffs_fingerprint(request.app, store_id)
+
+            if last_orders is not None and orders_fp != last_orders:
                 await response.write(b"data: refresh\n\n")
-            last = fingerprint
+            last_orders = orders_fp
+
+            if last_handoffs is not None and handoffs_fp != last_handoffs:
+                await response.write(b"data: refresh_handoffs\n\n")
+            last_handoffs = handoffs_fp
 
             ticks += 1
             if ticks % 10 == 0:

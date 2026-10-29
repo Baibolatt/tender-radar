@@ -37,6 +37,10 @@ def create_app(settings, db) -> web.Application:
         "/api/orders/{id}/status", handlers.set_order_status
     )
     app.router.add_get("/api/statuses", handlers.statuses_list)
+    app.router.add_get("/api/handoffs", handlers.handoffs_list)
+    app.router.add_post(
+        "/api/handoffs/{id}/resolve", handlers.resolve_handoff
+    )
     app.router.add_get("/api/events", handlers.events)
 
     app.router.add_static("/static", path=STATIC_DIR)
