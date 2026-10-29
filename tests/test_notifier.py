@@ -54,7 +54,7 @@ async def _make_order(db):
     return await orders.create(draft, florist_chat_id=999)
 
 
-async def test_sends_order_notification_and_marks_notified(db):
+async def test_sends_order_notification_keeps_status_new(db):
     order = await _make_order(db)
     bot = FakeBot()
     notifier = Notifier(db, bot, base_delay=0)
@@ -72,7 +72,7 @@ async def test_sends_order_notification_and_marks_notified(db):
 
     assert await OutboxRepository(db).list_pending() == []
     order_row = await OrderRepository(db).get(order.id)
-    assert order_row["status"] == "notified"
+    assert order_row["status"] == "new"
 
 
 async def test_failed_delivery_is_retried(db):

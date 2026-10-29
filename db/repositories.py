@@ -462,6 +462,48 @@ class OrderRepository:
         row = await cursor.fetchone()
         return dict(row) if row is not None else None
 
+    async def list_orders(
+        self,
+        store_id: int,
+        status: str | None = None,
+        search: str = "",
+    ) -> list[dict[str, Any]]:
+        """Заказы магазина, новые сверху. status — точный ключ или None/''/'all' (все);
+        search — подстрока по имени ИЛИ телефону."""
+        query = "SELECT * FROM orders WHERE store_id = ?"
+        params: list[Any] = [store_id]
+
+        if status and status != "all":
+            query += " AND status = ?"
+            params.append(status)
+
+        if search:
+            query += (
+                " AND (client_name LIKE '%' || ? || '%'"
+                " OR phone LIKE '%' || ? || '%')"
+            )
+            params.append(search)
+            params.append(search)
+
+        query += " ORDER BY created_at DESC, id DESC"
+        cursor = await self.db.connection.execute(query, params)
+        return [dict(row) for row in await cursor.fetchall()]
+
+    async def set_status(
+        self, order_id: int, status: str
+    ) -> dict[str, Any] | None:
+        """Меняет status и updated_at, возвращает строку заказа или None, если его нет."""
+        async with self.db.transaction() as conn:
+            await conn.execute(
+                "UPDATE orders SET status = ?, updated_at = ? WHERE id = ?",
+                (status, utc_now(), order_id),
+            )
+            cursor = await conn.execute(
+                "SELECT * FROM orders WHERE id = ?", (order_id,)
+            )
+            row = await cursor.fetchone()
+        return dict(row) if row is not None else None
+
     async def get_by_source(
         self, store_id: int, source_update_id: int
     ) -> Order | None:
@@ -529,7 +571,11 @@ class OutboxRepository:
     async def mark_sent(
         self, message_id: int, order_id: int | None = None
     ) -> None:
-        """Отмечает уведомление отправленным и переводит заказ в notified."""
+        """Отмечает уведомление отправленным.
+
+        order_id оставлен для совместимости сигнатуры: статус заказа
+        уведомлением больше не меняется.
+        """
         async with self.db.transaction() as conn:
             await conn.execute(
                 """
@@ -539,15 +585,6 @@ class OutboxRepository:
                 """,
                 (utc_now(), message_id),
             )
-            if order_id is not None:
-                await conn.execute(
-                    """
-                    UPDATE orders
-                    SET status = 'notified', updated_at = ?
-                    WHERE id = ? AND status = 'new'
-                    """,
-                    (utc_now(), order_id),
-                )
 
     async def enqueue_handoff(
         self, store_id: int, chat_id: int, payload: dict[str, Any]
