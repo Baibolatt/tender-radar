@@ -199,7 +199,7 @@ class AIClient:
             "systemInstruction": {"parts": [{"text": system_prompt}]},
             "contents": contents,
             "generationConfig": {
-                "temperature": 0.3,
+                "temperature": 0.6,
                 "maxOutputTokens": self.settings.ai_max_tokens,
                 "responseMimeType": "application/json",
             },

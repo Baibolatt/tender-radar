@@ -383,4 +383,4 @@ def test_prompt_contains_catalog_and_json_rules():
     assert '"handoff"' in prompt
     assert "JSON" in prompt
     assert "Не перечисляй весь каталог" in prompt
-    assert "600 символов" in prompt
+    assert "2–4 предложения" in prompt
