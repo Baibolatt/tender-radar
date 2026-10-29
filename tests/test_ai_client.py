@@ -35,8 +35,8 @@ VALID_JSON = json.dumps(VALID_DATA, ensure_ascii=False)
 def _settings(**overrides):
     values = {
         "ai_api_key": "test-key",
-        "ai_model": "deepseek-flash",
-        "ai_base_url": "https://api.deepseek.com",
+        "ai_model": "gemini-3.1-flash-lite",
+        "ai_base_url": "https://generativelanguage.googleapis.com/v1beta",
         "ai_max_retries": 2,
         "ai_retry_base_delay_seconds": 0,
         "ai_timeout_seconds": 5,
@@ -55,13 +55,13 @@ def _completion(
     return httpx.Response(
         status,
         json={
-            "choices": [
+            "candidates": [
                 {
-                    "message": {"content": content},
-                    "finish_reason": finish_reason,
+                    "content": {"parts": [{"text": content}]},
+                    "finishReason": finish_reason,
                 }
             ],
-            "usage": {"prompt_tokens": 10, "completion_tokens": 20},
+            "usageMetadata": {"promptTokenCount": 10, "candidatesTokenCount": 20},
         },
         headers=headers,
     )
@@ -114,16 +114,19 @@ async def test_successful_completion(http_factory):
     assert sleeper.delays == []
 
     body = json.loads(calls[0].content)
-    assert str(calls[0].url) == "https://api.deepseek.com/chat/completions"
-    assert calls[0].headers["authorization"] == "Bearer test-key"
-    assert body["model"] == "deepseek-flash"
-    assert body["max_tokens"] == 400
-    assert body["response_format"] == {"type": "json_object"}
-    assert body["messages"][0] == {
-        "role": "system",
-        "content": "системный промпт",
+    assert str(calls[0].url) == (
+        "https://generativelanguage.googleapis.com/v1beta"
+        "/models/gemini-3.1-flash-lite:generateContent"
+    )
+    assert calls[0].headers["x-goog-api-key"] == "test-key"
+    assert body["systemInstruction"] == {
+        "parts": [{"text": "системный промпт"}]
     }
-    assert body["messages"][1] == {"role": "user", "content": "Привет"}
+    assert body["contents"] == [
+        {"role": "user", "parts": [{"text": "Привет"}]}
+    ]
+    assert body["generationConfig"]["maxOutputTokens"] == 400
+    assert body["generationConfig"]["responseMimeType"] == "application/json"
 
 
 async def test_retries_on_server_error(http_factory):
@@ -167,7 +170,7 @@ async def test_does_not_retry_bad_key(http_factory):
 
     def handler(request):
         calls.append(request)
-        return httpx.Response(401, text="unauthorized")
+        return httpx.Response(400, text="API key not valid")
 
     ai = AIClient(
         _settings(), http_client=http_factory(handler), sleep=FakeSleeper()
@@ -218,12 +221,12 @@ async def test_invalid_json_is_repaired(http_factory):
     assert completion.completion_tokens == 40
 
     repair_body = json.loads(calls[1].content)
-    assert repair_body["messages"][-2] == {
-        "role": "assistant",
-        "content": "не json",
+    assert repair_body["contents"][-2] == {
+        "role": "model",
+        "parts": [{"text": "не json"}],
     }
-    assert repair_body["messages"][-1]["role"] == "user"
-    assert "JSON" in repair_body["messages"][-1]["content"]
+    assert repair_body["contents"][-1]["role"] == "user"
+    assert "JSON" in repair_body["contents"][-1]["parts"][0]["text"]
 
 
 async def test_invalid_json_twice_raises(http_factory):
@@ -249,7 +252,7 @@ async def test_truncated_response_is_repaired_with_short_request(http_factory):
     def handler(request):
         calls.append(request)
         if len(calls) == 1:
-            return _completion('{"reply": "Конечно, вот каталог:\\nМини-букет', finish_reason="length")
+            return _completion('{"reply": "Конечно, вот каталог:\\nМини-букет', finish_reason="MAX_TOKENS")
         return _completion(VALID_JSON)
 
     ai = AIClient(
@@ -262,7 +265,7 @@ async def test_truncated_response_is_repaired_with_short_request(http_factory):
 
     assert completion.response.reply == VALID_DATA["reply"]
     assert len(calls) == 2
-    repair_text = json.loads(calls[1].content)["messages"][-1]["content"]
+    repair_text = json.loads(calls[1].content)["contents"][-1]["parts"][0]["text"]
     assert "600" in repair_text
     assert "каталог" in repair_text
 
@@ -272,7 +275,7 @@ async def test_truncated_twice_raises_clear_reason(http_factory):
 
     def handler(request):
         calls.append(request)
-        return _completion('{"reply": "обрезано', finish_reason="length")
+        return _completion('{"reply": "обрезано', finish_reason="MAX_TOKENS")
 
     ai = AIClient(
         _settings(), http_client=http_factory(handler), sleep=FakeSleeper()
@@ -290,7 +293,7 @@ async def test_empty_content_is_repaired(http_factory):
     def handler(request):
         calls.append(request)
         if len(calls) == 1:
-            return _completion("   ", finish_reason="stop")
+            return _completion("   ", finish_reason="STOP")
         return _completion(VALID_JSON)
 
     ai = AIClient(

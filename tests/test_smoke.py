@@ -7,14 +7,14 @@ from config import Settings
 
 
 def test_settings_defaults(monkeypatch):
-    """По умолчанию используется DeepSeek и безопасные лимиты."""
+    """По умолчанию используется Gemini и безопасные лимиты."""
     monkeypatch.setenv("BOT_TOKEN", "123:test")
     monkeypatch.setenv("AI_API_KEY", "test-key")
     monkeypatch.delenv("AI_MODEL", raising=False)
 
     settings = Settings(_env_file=None)
 
-    assert settings.ai_model == "deepseek-flash"
+    assert settings.ai_model == "gemini-3.1-flash-lite"
     assert settings.ai_max_retries == 2
     assert settings.max_response_chars == 900
     assert "test-key" not in repr(settings.ai_api_key)

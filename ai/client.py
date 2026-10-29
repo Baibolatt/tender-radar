@@ -1,4 +1,4 @@
-"""Клиент DeepSeek API: таймаут, повторы и проверка JSON-ответа."""
+"""Клиент Google Gemini API: таймаут, повторы и проверка JSON-ответа."""
 
 import asyncio
 import json
@@ -56,11 +56,10 @@ class _RawCompletion:
     completion_tokens: int
     attempts: int
     finish_reason: str | None = None
-    reasoning_content: str | None = None
 
 
 class AIClient:
-    """Вызывает DeepSeek и не пропускает непроверенные ответы дальше."""
+    """Вызывает Gemini и не пропускает непроверенные ответы дальше."""
 
     def __init__(
         self,
@@ -77,7 +76,10 @@ class AIClient:
 
     @property
     def endpoint(self) -> str:
-        return f"{self.settings.ai_base_url.rstrip('/')}/chat/completions"
+        return (
+            f"{self.settings.ai_base_url.rstrip('/')}"
+            f"/models/{self.settings.ai_model}:generateContent"
+        )
 
     async def close(self) -> None:
         """Закрывает HTTP-клиент, если он создан внутри AIClient."""
@@ -91,12 +93,9 @@ class AIClient:
         if not self.settings.ai_api_key.get_secret_value():
             raise AIConfigurationError("AI_API_KEY не задан")
 
-        payload_messages = [
-            {"role": "system", "content": system_prompt},
-            *self._clean_messages(messages),
-        ]
+        contents = self._to_contents(messages)
 
-        raw = await self._request(payload_messages)
+        raw = await self._request(system_prompt, contents)
         try:
             completion = self._parse(raw)
         except AIInvalidResponse:
@@ -105,7 +104,7 @@ class AIClient:
                 raw.attempts,
             )
             repair_messages = [
-                *payload_messages,
+                *messages,
                 {"role": "assistant", "content": raw.content},
                 {
                     "role": "user",
@@ -118,7 +117,9 @@ class AIClient:
                     ),
                 },
             ]
-            repaired = await self._request(repair_messages)
+            repaired = await self._request(
+                system_prompt, self._to_contents(repair_messages)
+            )
             parsed = self._parse(repaired)
             completion = AICompletion(
                 response=parsed.response,
@@ -136,7 +137,9 @@ class AIClient:
         )
         return completion
 
-    async def _request(self, messages: list[dict[str, str]]) -> _RawCompletion:
+    async def _request(
+        self, system_prompt: str, contents: list[dict[str, object]]
+    ) -> _RawCompletion:
         max_attempts = 1 + max(0, self.settings.ai_max_retries)
         last_error = "неизвестная ошибка"
 
@@ -145,7 +148,7 @@ class AIClient:
                 response = await self._http.post(
                     self.endpoint,
                     headers=self._headers(),
-                    json=self._payload(messages),
+                    json=self._payload(system_prompt, contents),
                 )
             except (httpx.TimeoutException, httpx.TransportError) as exc:
                 last_error = f"сетевая ошибка: {exc.__class__.__name__}"
@@ -177,9 +180,10 @@ class AIClient:
                     continue
                 raise AIUnavailable(last_error)
 
-            if response.status_code in (401, 403):
+            if response.status_code in (400, 401, 403):
                 raise AIConfigurationError(
-                    f"AI API отклонил ключ: HTTP {response.status_code}"
+                    f"AI API отклонил запрос: HTTP {response.status_code}: "
+                    f"{response.text[:200]}"
                 )
 
             raise AIRequestError(
@@ -188,34 +192,44 @@ class AIClient:
 
         raise AIUnavailable(last_error)
 
-    def _payload(self, messages: list[dict[str, str]]) -> dict[str, object]:
+    def _payload(
+        self, system_prompt: str, contents: list[dict[str, object]]
+    ) -> dict[str, object]:
         return {
-            "model": self.settings.ai_model,
-            "messages": messages,
-            "max_tokens": self.settings.ai_max_tokens,
-            "temperature": 0.3,
-            "response_format": {"type": "json_object"},
+            "systemInstruction": {"parts": [{"text": system_prompt}]},
+            "contents": contents,
+            "generationConfig": {
+                "temperature": 0.3,
+                "maxOutputTokens": self.settings.ai_max_tokens,
+                "responseMimeType": "application/json",
+            },
         }
 
     def _headers(self) -> dict[str, str]:
         return {
-            "Authorization": (
-                f"Bearer {self.settings.ai_api_key.get_secret_value()}"
-            ),
+            "x-goog-api-key": self.settings.ai_api_key.get_secret_value(),
             "Content-Type": "application/json",
         }
 
     @staticmethod
-    def _clean_messages(
+    def _to_contents(
         messages: list[dict[str, str]]
-    ) -> list[dict[str, str]]:
-        cleaned: list[dict[str, str]] = []
+    ) -> list[dict[str, object]]:
+        """Переводит историю диалога в формат Gemini (user/model)."""
+        contents: list[dict[str, object]] = []
         for message in messages:
             role = message.get("role")
             content = message.get("content", "")
-            if role in {"user", "assistant"} and content.strip():
-                cleaned.append({"role": role, "content": content})
-        return cleaned
+            if not content.strip():
+                continue
+            if role == "user":
+                gemini_role = "user"
+            elif role == "assistant":
+                gemini_role = "model"
+            else:
+                continue
+            contents.append({"role": gemini_role, "parts": [{"text": content}]})
+        return contents
 
     def _parse_raw(
         self, response: httpx.Response, attempts: int
@@ -226,28 +240,24 @@ class AIClient:
             raise AIInvalidResponse("Ответ AI API не является JSON") from exc
 
         try:
-            choice = data["choices"][0]
-            content = choice["message"]["content"]
-        except (KeyError, IndexError, TypeError) as exc:
+            candidate = data["candidates"][0]
+            parts = (candidate.get("content") or {}).get("parts") or []
+            content = "".join(
+                part.get("text") or ""
+                for part in parts
+                if isinstance(part, dict)
+            )
+        except (KeyError, IndexError, TypeError, AttributeError) as exc:
             raise AIInvalidResponse("В ответе AI API нет текста") from exc
 
-        if not isinstance(content, str):
-            raise AIInvalidResponse("Текст ответа AI API не является строкой")
-
-        usage = data.get("usage") or {}
-        message = choice.get("message") or {}
-        reasoning = message.get("reasoning_content")
+        usage = data.get("usageMetadata") or {}
+        finish_reason = candidate.get("finishReason")
         return _RawCompletion(
             content=content,
-            prompt_tokens=int(usage.get("prompt_tokens") or 0),
-            completion_tokens=int(usage.get("completion_tokens") or 0),
+            prompt_tokens=int(usage.get("promptTokenCount") or 0),
+            completion_tokens=int(usage.get("candidatesTokenCount") or 0),
             attempts=attempts,
-            finish_reason=(
-                choice.get("finish_reason")
-                if isinstance(choice, dict)
-                else None
-            ),
-            reasoning_content=reasoning if isinstance(reasoning, str) else None,
+            finish_reason=finish_reason if isinstance(finish_reason, str) else None,
         )
 
     def _parse(self, raw: _RawCompletion) -> AICompletion:
@@ -255,22 +265,20 @@ class AIClient:
 
         # Обрезанный ответ почти всегда даёт битый JSON. Сообщаем причину
         # явно, чтобы в логе не было просто «не JSON».
-        if raw.finish_reason == "length":
+        if raw.finish_reason == "MAX_TOKENS":
             logger.warning(
-                "Ответ модели обрезан по лимиту max_tokens=%d. Сырой ответ: %s",
+                "Ответ модели обрезан по лимиту maxOutputTokens=%d. Сырой ответ: %s",
                 self.settings.ai_max_tokens,
                 content[:4000],
             )
             raise AIInvalidResponse(
-                "Ответ модели обрезан: достигнут лимит max_tokens"
+                "Ответ модели обрезан: достигнут лимит maxOutputTokens"
             )
 
         if not content.strip():
             logger.warning(
-                "Модель вернула пустой ответ (finish_reason=%s). "
-                "reasoning_content: %s",
+                "Модель вернула пустой ответ (finish_reason=%s)",
                 raw.finish_reason,
-                (raw.reasoning_content or "")[:1000],
             )
             raise AIInvalidResponse("Модель вернула пустой ответ")
 
