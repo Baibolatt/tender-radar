@@ -55,6 +55,7 @@ def _settings(**overrides):
         "max_response_chars": 900,
         "ready_minutes": 60,
         "catalog_page_size": 5,
+        "ai_step_questions": False,
     }
     values.update(overrides)
     return Settings(_env_file=None, **values)
@@ -666,3 +667,14 @@ async def test_ready_flag_with_incomplete_draft_is_ignored(db):
     assert outcome.reply == "Уточните, пожалуйста, адрес."
     session = await DialogSessionRepository(db).get(store["id"], 555)
     assert session["state"] == "chatting"
+
+
+async def test_step_question_is_ai_phrased_when_enabled(db):
+    store = await _make_store(db)
+    fake = FakeAI(AIResponse(reply="Как к вам обращаться?"))
+    service = DialogService(db, _settings(ai_step_questions=True), fake, store)
+
+    opened = await _open_order(service)
+
+    assert "Как к вам обращаться?" in opened.reply
+    assert len(fake.calls) >= 1

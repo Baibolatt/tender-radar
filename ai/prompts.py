@@ -78,3 +78,17 @@ def build_system_prompt(
         .replace("__DRAFT__", draft_text)
         .replace("__READY_MINUTES__", str(int(ready_minutes)))
     )
+
+
+STEP_PROMPT_TEMPLATE = """Ты — помощник цветочного магазина «__STORE_NAME__» в Таразе. Оформляешь заказ.
+Сейчас нужно узнать у клиента: __HINT__.
+Спроси одним коротким тёплым вопросом на «вы», своими словами. Без markdown, эмодзи и лишнего текста.
+Верни строго один JSON-объект: {"reply": "твой вопрос"}"""
+
+
+def build_step_prompt(store_name: str, hint: str) -> str:
+    """Подставляет магазин и суть вопроса для ИИ-формулировки шага."""
+    return (
+        STEP_PROMPT_TEMPLATE.replace("__STORE_NAME__", store_name)
+        .replace("__HINT__", hint)
+    )

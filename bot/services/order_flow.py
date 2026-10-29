@@ -59,6 +59,22 @@ STEP_QUESTIONS = {
     ),
 }
 
+STEP_HINTS = {
+    STEP_OCCASION: "повод и примерный бюджет",
+    STEP_BOUQUET: "какой букет выбрать",
+    STEP_CLIENT_NAME: "имя клиента, как к нему обращаться",
+    STEP_CLIENT_PHONE: "телефон клиента в формате +7 XXX XXX XX XX",
+    STEP_GIFT: "букет для себя или в подарок",
+    STEP_RECIPIENT_NAME: "имя получателя подарка",
+    STEP_RECIPIENT_PHONE: "телефон получателя в формате +7 XXX XXX XX XX",
+    STEP_ADDRESS: "адрес доставки в Таразе",
+    STEP_DATE: "дату доставки (например «завтра» или «27 октября»)",
+    STEP_TIME: "время или промежуток доставки",
+    STEP_CARD: "нужна ли открытка (ответ «да» или «нет»)",
+    STEP_CARD_TEXT: "текст открытки",
+    STEP_WISHES: "пожелания по оформлению (можно ответить «нет»)",
+}
+
 EDIT_FIELD_STEPS = {
     "bouquet_id": STEP_BOUQUET,
     "client_name": STEP_CLIENT_NAME,

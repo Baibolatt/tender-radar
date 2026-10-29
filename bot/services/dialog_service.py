@@ -16,7 +16,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from ai.client import AIClient, AIError
-from ai.prompts import build_system_prompt
+from ai.prompts import build_step_prompt, build_system_prompt
 from bot.services import order_flow
 from bot.services.catalog_service import (
     Keyboard,
@@ -1126,6 +1126,9 @@ class DialogService:
             )
 
         reply = order_flow.question(step)
+        # Без префикса-уточнения формулируем вопрос через ИИ.
+        if not prefix:
+            reply = await self._step_question(store_id, step)
         if prefix:
             reply = f"{prefix}\n\n{reply}"
         await self._save_chat(
@@ -1163,6 +1166,34 @@ class DialogService:
         )
         keyboard = CARD_KEYBOARD if step == order_flow.STEP_CARD else None
         return DialogOutcome(reply=reply, order_draft=draft, keyboard=keyboard)
+
+    async def _step_question(self, store_id: int, step: str) -> str:
+        """Формулирует вопрос шага через ИИ; при ошибке — стандартный текст."""
+        if not self.settings.ai_step_questions:
+            return order_flow.question(step)
+
+        hint = order_flow.STEP_HINTS.get(step, order_flow.question(step))
+        prompt = build_step_prompt(self.store["name"], hint)
+        try:
+            completion = await self.ai.complete(
+                prompt, [{"role": "user", "content": "Сформулируй вопрос клиенту."}]
+            )
+        except AIError:
+            return order_flow.question(step)
+
+        await self.usage.add_tokens(
+            store_id,
+            self._today().isoformat(),
+            completion.prompt_tokens,
+            completion.completion_tokens,
+        )
+        reply = (completion.response.reply or "").strip()
+        if not reply:
+            return order_flow.question(step)
+        return self._truncate(
+            self._escape(reply),
+            self._store_limit("max_response_chars", self.settings.max_response_chars),
+        )
 
     async def _summary_outcome(
         self,

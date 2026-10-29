@@ -59,6 +59,9 @@ class Settings(BaseSettings):
     panel_host: str = Field(default="127.0.0.1", alias="PANEL_HOST")
     panel_port: int = Field(default=8000, alias="PANEL_PORT")
 
+    # Формулировать вопросы оформления через ИИ (иначе — жёсткий шаблон).
+    ai_step_questions: bool = Field(default=True, alias="AI_STEP_QUESTIONS")
+
 
 @lru_cache
 def get_settings() -> Settings:
