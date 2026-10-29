@@ -19,10 +19,18 @@
   var newCountEl = document.getElementById("new-count");
   var newWordEl = document.getElementById("new-word");
   var soundToggle = document.getElementById("sound-toggle");
+  var soundLabel = document.getElementById("sound-label");
   var searchEl = document.getElementById("search");
   var filtersEl = document.getElementById("filters");
   var feedEl = document.getElementById("feed");
   var emptyEl = document.getElementById("empty");
+  var tabOrders = document.getElementById("tab-orders");
+  var tabHandoffs = document.getElementById("tab-handoffs");
+  var ordersView = document.getElementById("orders-view");
+  var handoffsView = document.getElementById("handoffs-view");
+  var handoffsFeedEl = document.getElementById("handoffs-feed");
+  var handoffsEmptyEl = document.getElementById("handoffs-empty");
+  var handoffCountEl = document.getElementById("handoff-count");
   var toastEl = document.getElementById("toast");
   var toastTextEl = document.getElementById("toast-text");
 
@@ -31,8 +39,10 @@
     statuses: [],
     status: "all",
     q: "",
-    sound: false,
-    knownIds: null
+    tab: "orders",
+    sound: true,
+    knownIds: null,
+    knownHandoffIds: null
   };
   var statusByKey = new Map();
   var cancelledKey = null;
@@ -148,7 +158,7 @@
     return n % 10 === 1 && n % 100 !== 11 ? "новый" : "новых";
   }
 
-  // ——— Звук нового заказа (только после клика пользователя) ———
+  // ——— Звуковые сигналы (только после жеста пользователя) ———
   function audioContext() {
     var Ctx = window.AudioContext || window.webkitAudioContext;
     if (!Ctx) return null;
@@ -157,17 +167,18 @@
     return audioCtx;
   }
 
-  function playChime() {
+  // Общая мелодия из двух sine-тонов с заданной паузой между ними.
+  function playToneSequence(freqs, gap) {
     if (!state.sound) return;
     var ctx = audioContext();
     if (!ctx) return;
     var start = ctx.currentTime;
-    [660, 880].forEach(function (freq, i) {
+    freqs.forEach(function (freq, i) {
       var osc = ctx.createOscillator();
       var gain = ctx.createGain();
       osc.type = "sine";
       osc.frequency.value = freq;
-      var t = start + i * 0.18;
+      var t = start + i * gap;
       gain.gain.setValueAtTime(0.0001, t);
       gain.gain.exponentialRampToValueAtTime(0.12, t + 0.03);
       gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.34);
@@ -176,6 +187,26 @@
       osc.stop(t + 0.36);
     });
   }
+
+  // Новый заказ: восходящие тона.
+  function playOrderChime() {
+    playToneSequence([660, 880], 0.18);
+  }
+
+  // Новое обращение: нисходящие тона, чуть длиннее — чтобы отличалось на слух.
+  function playHandoffChime() {
+    playToneSequence([523, 392], 0.22);
+  }
+
+  // Браузеры разрешают звук только после жеста: разблокируем контекст
+  // по первому касанию или нажатию клавиши.
+  function unlockAudio() {
+    audioContext();
+    document.removeEventListener("pointerdown", unlockAudio);
+    document.removeEventListener("keydown", unlockAudio);
+  }
+  document.addEventListener("pointerdown", unlockAudio);
+  document.addEventListener("keydown", unlockAudio);
 
   // ——— Тост ———
   function showToast() {
@@ -191,6 +222,14 @@
     var strong = el("strong", null, number);
     toastTextEl.appendChild(strong);
     toastTextEl.appendChild(document.createTextNode(" — новый заказ"));
+    showToast();
+  }
+
+  function toastNewHandoff(handoff) {
+    toastTextEl.textContent = "";
+    var strong = el("strong", null, handoff.client_name || "Клиент");
+    toastTextEl.appendChild(strong);
+    toastTextEl.appendChild(document.createTextNode(" — новое обращение"));
     showToast();
   }
 
@@ -358,6 +397,62 @@
     return card;
   }
 
+  // ——— Карточка обращения ———
+  function handoffStatusPill(status) {
+    var resolved = status === "resolved";
+    var pill = el("span", "status");
+    // Используем тот же механизм, что у заказов: цвет берётся из --st-color.
+    pill.style.setProperty("--st-color", resolved ? "var(--st-cancelled)" : "var(--st-new)");
+    pill.style.setProperty("--st-bg", resolved ? "var(--st-cancelled-bg)" : "var(--st-new-bg)");
+    pill.appendChild(el("span", "dot"));
+    pill.appendChild(document.createTextNode(resolved ? "Решено" : "Новое"));
+    return pill;
+  }
+
+  function buildHandoffCard(handoff, isNew) {
+    var card = el("article", "card" + (isNew ? " card--new" : ""));
+    card.dataset.id = String(handoff.id);
+    card.dataset.status = handoff.status || "";
+
+    var top = el("div", "card__top");
+    top.appendChild(el("span", "card__num", "Обращение"));
+    top.appendChild(handoffStatusPill(handoff.status));
+    var created = formatCreated(handoff.created_at);
+    top.appendChild(el(
+      "span",
+      "card__time" + (created.fresh ? " card__time--fresh" : ""),
+      created.text
+    ));
+    card.appendChild(top);
+
+    if (handoff.reason) {
+      card.appendChild(el("div", "handoff__reason", handoff.reason));
+    }
+
+    var meta = el("div", "meta");
+    meta.appendChild(el("div", "client", handoff.client_name || "Клиент"));
+    card.appendChild(meta);
+
+    if (handoff.last_message) {
+      card.appendChild(el("div", "handoff__msg", handoff.last_message));
+    }
+
+    if (handoff.status === "new") {
+      var actions = el("div", "actions");
+      var resolve = el("button", "btn btn--primary", "Решено");
+      resolve.type = "button";
+      resolve.addEventListener("click", function () {
+        resolveHandoff(handoff, resolve);
+      });
+      actions.appendChild(resolve);
+      card.appendChild(actions);
+    } else {
+      card.appendChild(el("div", "done-note", "Решено"));
+    }
+
+    return card;
+  }
+
   // ——— Отрисовка ———
   function renderFeed(orders, newIds) {
     feedEl.textContent = "";
@@ -380,6 +475,36 @@
         );
       }, 2600);
     }
+  }
+
+  function renderHandoffs(handoffs, newIds) {
+    handoffsFeedEl.textContent = "";
+    var fragment = document.createDocumentFragment();
+    handoffs.forEach(function (handoff) {
+      fragment.appendChild(buildHandoffCard(handoff, newIds.has(handoff.id)));
+    });
+    handoffsFeedEl.appendChild(fragment);
+
+    handoffsEmptyEl.hidden = handoffs.length !== 0;
+    handoffsEmptyEl.textContent = "Обращений пока нет";
+
+    if (newIds.size) {
+      setTimeout(function () {
+        Array.prototype.forEach.call(
+          handoffsFeedEl.querySelectorAll(".card--new"),
+          function (card) { card.classList.remove("card--new"); }
+        );
+      }, 2600);
+    }
+  }
+
+  function updateHandoffCount(handoffs) {
+    var count = 0;
+    handoffs.forEach(function (handoff) {
+      if (handoff.status === "new") count += 1;
+    });
+    handoffCountEl.textContent = String(count);
+    handoffCountEl.hidden = count === 0;
   }
 
   function updateBadge(allOrders) {
@@ -447,7 +572,7 @@
 
       if (newOnes.length) {
         toastNewOrder(newOnes[0].public_number || "Заказ");
-        playChime();
+        playOrderChime();
       }
       return true;
     } catch (err) {
@@ -465,6 +590,61 @@
         queuedDetect = false;
         refresh(detect);
       }
+    }
+  }
+
+  // ——— Загрузка обращений ———
+  async function loadHandoffs(detectNew) {
+    try {
+      var data = await getJSON("/api/handoffs?status=all");
+      var handoffs = Array.isArray(data.handoffs) ? data.handoffs : [];
+
+      var newOnes = [];
+      if (state.knownHandoffIds === null) {
+        // Первая загрузка задаёт базовый список — без тоста.
+        state.knownHandoffIds = new Set(handoffs.map(function (h) { return h.id; }));
+      } else if (detectNew) {
+        newOnes = handoffs.filter(function (h) {
+          return !state.knownHandoffIds.has(h.id);
+        });
+        state.knownHandoffIds = new Set(handoffs.map(function (h) { return h.id; }));
+      }
+
+      renderHandoffs(handoffs, new Set(newOnes.map(function (h) { return h.id; })));
+      updateHandoffCount(handoffs);
+
+      if (newOnes.length) {
+        toastNewHandoff(newOnes[0]);
+        playHandoffChime();
+      }
+      return true;
+    } catch (err) {
+      if (err instanceof AuthError) {
+        showLogin();
+      } else {
+        toastMessage("Не удалось загрузить обращения");
+      }
+      return false;
+    }
+  }
+
+  // ——— Закрытие обращения ———
+  async function resolveHandoff(handoff, button) {
+    button.disabled = true;
+    try {
+      var res = await fetch("/api/handoffs/" + handoff.id + "/resolve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" }
+      });
+      if (res.status === 401) {
+        showLogin();
+        return;
+      }
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      await loadHandoffs(false);
+    } catch (err) {
+      button.disabled = false;
+      toastMessage("Не удалось закрыть обращение");
     }
   }
 
@@ -537,7 +717,8 @@
     eventSource = new EventSource("/api/events");
     eventSource.onmessage = function (event) {
       var data = (event.data || "").trim();
-      if (!data || data === "refresh") refresh(true);
+      if (data === "refresh") refresh(true);
+      else if (data === "refresh_handoffs") loadHandoffs(true);
     };
     // При обрыве EventSource переподключается сам.
     eventSource.onerror = function () {};
@@ -551,6 +732,7 @@
     }
     initialized = false;
     state.knownIds = null;
+    state.knownHandoffIds = null;
     appEl.hidden = true;
     bootEl.hidden = true;
     loginEl.hidden = false;
@@ -569,11 +751,18 @@
     initialized = true;
     state.status = "all";
     state.q = "";
+    state.sound = true;
     state.knownIds = null;
+    state.knownHandoffIds = null;
     if (searchEl) searchEl.value = "";
     feedEl.textContent = "";
     emptyEl.hidden = false;
     emptyEl.textContent = "Загрузка…";
+    handoffsFeedEl.textContent = "";
+    handoffsEmptyEl.hidden = true;
+    handoffCountEl.textContent = "0";
+    handoffCountEl.hidden = true;
+    selectTab("orders");
 
     try {
       var data = await getJSON("/api/statuses");
@@ -658,17 +847,49 @@
     }, 300);
   });
 
+  // ——— Вкладки ———
+  function selectTab(tab) {
+    state.tab = tab;
+    var ordersOn = tab === "orders";
+    tabOrders.classList.toggle("active", ordersOn);
+    tabHandoffs.classList.toggle("active", !ordersOn);
+    tabOrders.setAttribute("aria-selected", String(ordersOn));
+    tabHandoffs.setAttribute("aria-selected", String(!ordersOn));
+    ordersView.hidden = !ordersOn;
+    handoffsView.hidden = ordersOn;
+    // При первом открытии вкладки «Обращения» подгружаем список.
+    if (!ordersOn && state.knownHandoffIds === null) loadHandoffs(false);
+  }
+
+  tabOrders.addEventListener("click", function () {
+    selectTab("orders");
+  });
+
+  tabHandoffs.addEventListener("click", function () {
+    selectTab("handoffs");
+  });
+
   // ——— Переключатель звука ———
-  soundToggle.addEventListener("click", function () {
-    state.sound = !state.sound;
+  function updateSoundToggle() {
     soundToggle.setAttribute("aria-pressed", String(state.sound));
     soundToggle.setAttribute(
       "aria-label",
       state.sound ? "Звук включён" : "Звук выключен"
     );
-    // Аудиоконтекст создаём именно по клику — так требуют браузеры.
-    if (state.sound) audioContext();
+    if (soundLabel) soundLabel.textContent = state.sound ? "Звук вкл" : "Звук выкл";
+  }
+
+  soundToggle.addEventListener("click", function () {
+    var wasOff = !state.sound;
+    state.sound = !state.sound;
+    updateSoundToggle();
+    // Включаем вручную — даём пробный сигнал нового заказа.
+    if (wasOff) playOrderChime();
   });
+
+  // Звук включён по умолчанию — синхронизируем разметку и состояние.
+  state.sound = true;
+  updateSoundToggle();
 
   // ——— Старт ———
   checkAuth();

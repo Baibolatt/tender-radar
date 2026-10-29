@@ -407,3 +407,33 @@ body::before {
 @media (prefers-reduced-motion: reduce) {
   .card--new { animation: none; }
 }
+
+/* Контейнеры вкладок: сохраняют отступы, которые раньше давал .wrap. */
+#orders-view, #handoffs-view {
+  display: flex; flex-direction: column; gap: 16px;
+}
+
+/* Вкладки */
+.tabs {
+  display: flex; gap: 4px; padding: 4px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
+}
+.tab {
+  flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  font: inherit; font-size: 14px; font-weight: 700; color: var(--muted);
+  background: transparent; border: none; border-radius: 10px;
+  padding: 10px 12px; cursor: pointer;
+}
+.tab.active { background: var(--ink); color: #fff; }
+.tab__count {
+  font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums;
+  background: var(--petal); color: #fff; border-radius: 999px; padding: 1px 7px;
+}
+.tab.active .tab__count { background: var(--petal); }
+
+/* Карточка обращения */
+.handoff__reason { font-weight: 700; font-size: 14.5px; }
+.handoff__msg {
+  background: var(--surface-2); border-left: 3px solid var(--sage);
+  border-radius: 8px; padding: 9px 12px; font-size: 13.5px; color: var(--ink);
+}
