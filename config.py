@@ -54,6 +54,11 @@ class Settings(BaseSettings):
     # Логи
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
 
+    # Панель заказов флориста
+    panel_password: SecretStr = Field(default=SecretStr(""), alias="PANEL_PASSWORD")
+    panel_host: str = Field(default="127.0.0.1", alias="PANEL_HOST")
+    panel_port: int = Field(default=8000, alias="PANEL_PORT")
+
 
 @lru_cache
 def get_settings() -> Settings:
