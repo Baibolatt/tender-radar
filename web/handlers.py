@@ -13,6 +13,7 @@ from web.auth import (
     password_matches,
     start_session,
 )
+from web.keys import DB, SESSIONS, SETTINGS
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -44,8 +45,8 @@ def order_to_json(row: dict) -> dict:
 
 async def _store_id(app: web.Application) -> int:
     """Находит магазин из настроек или отдаёт 500."""
-    store = await StoreRepository(app["db"]).get_by_code(
-        app["settings"].store_code
+    store = await StoreRepository(app[DB]).get_by_code(
+        app[SETTINGS].store_code
     )
     if store is None:
         raise web.HTTPInternalServerError()
@@ -70,7 +71,7 @@ async def login(request: web.Request) -> web.Response:
     """Проверяет пароль и выдаёт cookie сессии."""
     data = await _read_json(request)
     provided = str(data.get("password", ""))
-    settings = request.app["settings"]
+    settings = request.app[SETTINGS]
 
     if not password_matches(settings, provided):
         return web.json_response({"error": "неверный пароль"}, status=401)
@@ -88,7 +89,7 @@ async def logout(request: web.Request) -> web.Response:
     """Удаляет сессию из памяти."""
     token = request.cookies.get(SESSION_COOKIE)
     if token:
-        request.app["sessions"].pop(token, None)
+        request.app[SESSIONS].pop(token, None)
     return web.json_response({"ok": True})
 
 
@@ -103,7 +104,7 @@ async def orders(request: web.Request) -> web.Response:
     status = request.query.get("status") or "all"
     query = request.query.get("q") or ""
 
-    rows = await OrderRepository(request.app["db"]).list_orders(
+    rows = await OrderRepository(request.app[DB]).list_orders(
         store_id,
         status="all" if status == "all" else status,
         search=query,
@@ -124,7 +125,7 @@ async def set_order_status(request: web.Request) -> web.Response:
     if not statuses.is_valid(new_status):
         return web.json_response({"error": "неизвестный статус"}, status=400)
 
-    row = await OrderRepository(request.app["db"]).set_status(
+    row = await OrderRepository(request.app[DB]).set_status(
         order_id, new_status
     )
     if row is None:
@@ -140,7 +141,7 @@ async def statuses_list(request: web.Request) -> web.Response:
 
 async def _orders_fingerprint(app: web.Application, store_id: int) -> tuple:
     """Отпечаток состояния заказов магазина для SSE."""
-    cursor = await app["db"].connection.execute(
+    cursor = await app[DB].connection.execute(
         """
         SELECT COUNT(*) AS total,
                COALESCE(MAX(id), 0) AS max_id,

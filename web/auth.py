@@ -5,6 +5,8 @@ import time
 
 from aiohttp import web
 
+from web.keys import SESSIONS
+
 SESSION_COOKIE = "session"
 SESSION_TTL_SECONDS = 86400
 
@@ -16,12 +18,12 @@ def new_token() -> str:
 
 def start_session(app: web.Application, token: str) -> None:
     """Запоминает токен в памяти и срок его действия."""
-    app["sessions"][token] = time.time() + SESSION_TTL_SECONDS
+    app[SESSIONS][token] = time.time() + SESSION_TTL_SECONDS
 
 
 def is_authorized(request: web.Request) -> bool:
     """Проверяет cookie сессии и заодно убирает просроченные токены."""
-    sessions: dict[str, float] = request.app["sessions"]
+    sessions: dict[str, float] = request.app[SESSIONS]
     now = time.time()
 
     # Удаляем просроченные сессии, чтобы память не росла

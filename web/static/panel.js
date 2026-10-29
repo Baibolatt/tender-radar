@@ -347,9 +347,10 @@
       }
       card.appendChild(actions);
     } else {
+      var isCancelled = order.status === cancelledKey;
       card.appendChild(el(
         "div",
-        "done-note",
+        "done-note" + (isCancelled ? " done-note--cancelled" : ""),
         current ? current.label : (order.status || "Завершён")
       ));
     }

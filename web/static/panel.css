@@ -284,18 +284,6 @@ body::before {
   padding: 5px 10px; border-radius: 999px;
 }
 .status .dot { width: 7px; height: 7px; border-radius: 50%; }
-.status--new { color: var(--st-new); background: var(--st-new-bg); }
-.status--new .dot { background: var(--st-new); }
-.status--assembling { color: var(--st-assembling); background: var(--st-assembling-bg); }
-.status--assembling .dot { background: var(--st-assembling); }
-.status--ready { color: var(--st-ready); background: var(--st-ready-bg); }
-.status--ready .dot { background: var(--st-ready); }
-.status--delivering { color: var(--st-delivering); background: var(--st-delivering-bg); }
-.status--delivering .dot { background: var(--st-delivering); }
-.status--delivered { color: var(--st-delivered); background: var(--st-delivered-bg); }
-.status--delivered .dot { background: var(--st-delivered); }
-.status--cancelled { color: var(--st-cancelled); background: var(--st-cancelled-bg); }
-.status--cancelled .dot { background: var(--st-cancelled); }
 
 /* Статусы из API: цвет берётся из токена --st-<key>, иначе нейтральный. */
 .status {
@@ -394,6 +382,12 @@ body::before {
   content: "✓"; width: 22px; height: 22px; border-radius: 50%;
   background: var(--st-delivered-bg); color: var(--st-delivered);
   display: grid; place-items: center; font-size: 13px;
+}
+.done-note--cancelled { color: var(--st-cancelled); }
+.done-note--cancelled::before {
+  content: "—";
+  background: var(--st-cancelled-bg);
+  color: var(--st-cancelled);
 }
 
 /* ——— Тост о новом заказе ——— */

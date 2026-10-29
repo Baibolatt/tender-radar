@@ -6,6 +6,7 @@ from aiohttp import web
 
 from web import handlers
 from web.auth import is_authorized
+from web.keys import DB, SESSIONS, SETTINGS
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -21,9 +22,9 @@ async def auth_middleware(request: web.Request, handler):
 def create_app(settings, db) -> web.Application:
     """Создаёт приложение со всеми роутами панели."""
     app = web.Application()
-    app["settings"] = settings
-    app["db"] = db
-    app["sessions"] = {}
+    app[SETTINGS] = settings
+    app[DB] = db
+    app[SESSIONS] = {}
 
     # Middleware добавляется до старта приложения
     app.middlewares.append(auth_middleware)
