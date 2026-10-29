@@ -19,7 +19,14 @@ async def main() -> None:
     try:
         await db.migrate()
         app = create_app(settings, db)
-        web.run_app(app, host=settings.panel_host, port=settings.panel_port)
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(
+            runner, host=settings.panel_host, port=settings.panel_port
+        )
+        await site.start()
+        # Держим сервер, пока процесс не прервут (Ctrl+C).
+        await asyncio.Event().wait()
     finally:
         await db.close()
 
