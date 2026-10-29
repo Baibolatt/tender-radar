@@ -1831,10 +1831,11 @@ class DialogService:
         draft: dict[str, Any],
         session: dict[str, Any],
     ) -> bool:
-        """Ставит уведомление флористу и включает паузу от повторных алертов."""
-        if self._handoff_active(session):
-            return False
+        """Фиксирует обращение в панели и шлёт уведомление флористу.
 
+        Запись в handoffs создаётся всегда, чтобы флорист видел обращение
+        в панели. Кулдаун ограничивает только Telegram-уведомление.
+        """
         await self.handoffs.create(
             store_id=store_id,
             client_chat_id=chat_id,
@@ -1842,6 +1843,9 @@ class DialogService:
             reason=reason,
             last_message=self._truncate(text, 500),
         )
+
+        if self._handoff_active(session):
+            return True
 
         florist_chat_id = (
             self.store.get("florist_chat_id") or self.settings.florist_chat_id
