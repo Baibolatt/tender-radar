@@ -1,0 +1,534 @@
+<meta charset="utf-8">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>Заказы флориста</title>
+<style>
+  /* Макет: мобильная лента заказов, светлая «цветочная» тема. */
+  :root {
+    color-scheme: light;
+    /* Холодный зеленовато-белый фон, глубокий лиственный чернильный,
+       шалфей и розово-лепестковый акцент. */
+    --bg: #F1F5F0;
+    --surface: #FFFFFF;
+    --surface-2: #F6FAF6;
+    --ink: #1E362B;
+    --muted: #5C6C61;
+    --faint: #8C9A90;
+    --line: #DFE8DF;
+    --stem: #2E6B4B;
+    --stem-deep: #24573C;
+    --sage: #8FB29A;
+    --petal: #C2617F;
+    --petal-soft: #F6E3E9;
+    --amber: #B3823A;
+    --danger: #A8553F;
+    --danger-soft: #F6E4DE;
+    --flash: #DCF0DE;
+
+    /* Статусы: цвет + мягкая подложка */
+    --st-new: #2E6B4B;         --st-new-bg: #E4F1E6;
+    --st-assembling: #B3823A;  --st-assembling-bg: #F5EBD9;
+    --st-ready: #3E8A62;       --st-ready-bg: #E2F0E8;
+    --st-delivering: #5B78A6;  --st-delivering-bg: #E5EBF5;
+    --st-delivered: #C2617F;   --st-delivered-bg: #F6E3E9;
+    --st-cancelled: #6E7A72;   --st-cancelled-bg: #EAEDEB;
+
+    --font-display: "Fraunces", Georgia, "Times New Roman", serif;
+    --font-body: "Manrope", -apple-system, "Segoe UI", system-ui, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 15px;
+    line-height: 1.5;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 0 48px;
+  }
+
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0 0 auto;
+    height: env(safe-area-inset-top, 0px);
+    z-index: 10;
+    background: var(--bg);
+  }
+
+  .wrap {
+    max-width: 640px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  /* ——— Шапка ——— */
+  .top {
+    position: sticky;
+    top: env(safe-area-inset-top, 0px);
+    z-index: 5;
+    background: var(--bg);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding-block: 14px 10px;
+  }
+  .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .brand__mark {
+    width: 40px; height: 40px; flex: none;
+    border-radius: 50%;
+    background: var(--stem);
+    display: grid; place-items: center;
+    position: relative;
+  }
+  .brand__mark::before {
+    content: "";
+    width: 14px; height: 14px; border-radius: 50%;
+    background: #fff;
+    box-shadow:
+      0 -10px 0 -5px #fff,
+      0 10px 0 -5px #fff,
+      -10px 0 0 -5px #fff,
+      10px 0 0 -5px #fff,
+      -7px -7px 0 -5px #fff,
+      7px -7px 0 -5px #fff,
+      -7px 7px 0 -5px #fff,
+      7px 7px 0 -5px #fff;
+  }
+  .brand__name {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 24px;
+    line-height: 1.1;
+    letter-spacing: -0.01em;
+  }
+  .brand__sub { font-size: 12.5px; color: var(--muted); }
+
+  .top__right { display: flex; align-items: center; gap: 8px; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-size: 12.5px; font-weight: 600; color: var(--muted);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    padding: 7px 11px; border-radius: 999px;
+    white-space: nowrap;
+  }
+  .pill__dot { width: 8px; height: 8px; border-radius: 50%; background: var(--stem); }
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12.5px; font-weight: 700; color: var(--stem-deep);
+    background: var(--st-new-bg);
+    padding: 7px 11px; border-radius: 999px; white-space: nowrap;
+  }
+  .badge b { font-variant-numeric: tabular-nums; }
+
+  /* ——— Поиск и фильтр ——— */
+  .toolbar { display: flex; flex-direction: column; gap: 12px; }
+  .search { position: relative; }
+  .search input {
+    width: 100%;
+    font: inherit;
+    color: var(--ink);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 13px 14px 13px 42px;
+  }
+  .search input::placeholder { color: var(--faint); }
+  .search input:focus { outline: 2px solid var(--stem); outline-offset: 1px; }
+  .search svg {
+    position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
+    color: var(--faint); pointer-events: none;
+  }
+
+  .filters {
+    display: flex; gap: 8px; overflow-x: auto;
+    padding-block: 2px;
+    scrollbar-width: none;
+  }
+  .filters::-webkit-scrollbar { display: none; }
+  .chip {
+    flex: none;
+    display: inline-flex; align-items: center; gap: 7px;
+    font-size: 13px; font-weight: 600; color: var(--muted);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    padding: 8px 13px; border-radius: 999px;
+    cursor: pointer; white-space: nowrap;
+  }
+  .chip.active { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .chip .n { font-variant-numeric: tabular-nums; opacity: 0.7; }
+  .chip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
+  .chip.active .dot { background: #fff; }
+  .chip[data-filter="new"] .dot { background: var(--st-new); }
+  .chip[data-filter="assembling"] .dot { background: var(--st-assembling); }
+  .chip[data-filter="ready"] .dot { background: var(--st-ready); }
+  .chip[data-filter="delivering"] .dot { background: var(--st-delivering); }
+  .chip[data-filter="delivered"] .dot { background: var(--st-delivered); }
+  .chip[data-filter="cancelled"] .dot { background: var(--st-cancelled); }
+
+  /* ——— Лента заказов ——— */
+  .feed { display: flex; flex-direction: column; gap: 12px; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 16px;
+    display: flex; flex-direction: column; gap: 14px;
+    position: relative;
+  }
+  .card--new { border-color: var(--sage); animation: arrive 2.2s ease-out; }
+  @keyframes arrive {
+    0% { box-shadow: 0 0 0 0 var(--flash); background: var(--flash); }
+    60% { box-shadow: 0 0 0 10px var(--flash); background: var(--flash); }
+    100% { box-shadow: 0 0 0 0 var(--flash); background: var(--surface); }
+  }
+
+  .card__top { display: flex; align-items: baseline; gap: 10px; }
+  .card__num {
+    font-family: var(--font-display); font-weight: 600; font-size: 18px;
+    letter-spacing: -0.01em; font-variant-numeric: tabular-nums;
+  }
+  .card__time { margin-left: auto; font-size: 12.5px; color: var(--faint); white-space: nowrap; }
+  .card__time--fresh { color: var(--stem-deep); font-weight: 700; }
+
+  .status {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; font-weight: 700;
+    padding: 5px 10px; border-radius: 999px;
+  }
+  .status .dot { width: 7px; height: 7px; border-radius: 50%; }
+  .status--new { color: var(--st-new); background: var(--st-new-bg); }
+  .status--new .dot { background: var(--st-new); }
+  .status--assembling { color: var(--st-assembling); background: var(--st-assembling-bg); }
+  .status--assembling .dot { background: var(--st-assembling); }
+  .status--ready { color: var(--st-ready); background: var(--st-ready-bg); }
+  .status--ready .dot { background: var(--st-ready); }
+  .status--delivering { color: var(--st-delivering); background: var(--st-delivering-bg); }
+  .status--delivering .dot { background: var(--st-delivering); }
+  .status--delivered { color: var(--st-delivered); background: var(--st-delivered-bg); }
+  .status--delivered .dot { background: var(--st-delivered); }
+  .status--cancelled { color: var(--st-cancelled); background: var(--st-cancelled-bg); }
+  .status--cancelled .dot { background: var(--st-cancelled); }
+
+  /* Стебель: рост заказа от бутона до распустившегося цветка */
+  .growth {
+    display: flex; align-items: center; gap: 0; position: relative;
+    padding-inline: 2px;
+  }
+  .growth::before {
+    content: ""; position: absolute; left: 8px; right: 8px; top: 50%;
+    height: 2px; background: var(--line); transform: translateY(-50%);
+  }
+  .g-node, .g-bloom { position: relative; z-index: 1; flex: none; }
+  .g-node {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--surface); border: 2px solid var(--line);
+    margin-right: 14px;
+  }
+  .g-node.on { background: var(--stem); border-color: var(--stem); }
+  .g-bloom {
+    width: 20px; height: 20px; border-radius: 50%;
+    background: var(--surface); border: 2px solid var(--line);
+  }
+  .g-bloom.on {
+    border: none;
+    background: var(--petal);
+    box-shadow:
+      0 -9px 0 -5px var(--petal),
+      0 9px 0 -5px var(--petal),
+      -9px 0 0 -5px var(--petal),
+      9px 0 0 -5px var(--petal),
+      -6px -6px 0 -5px var(--petal),
+      6px -6px 0 -5px var(--petal),
+      -6px 6px 0 -5px var(--petal),
+      6px 6px 0 -5px var(--petal);
+  }
+  .growth--cancelled .g-node.on { background: var(--faint); border-color: var(--faint); }
+  .growth--cancelled .g-bloom.on {
+    background: var(--faint);
+    box-shadow:
+      0 -9px 0 -5px var(--faint),
+      0 9px 0 -5px var(--faint),
+      -9px 0 0 -5px var(--faint),
+      9px 0 0 -5px var(--faint),
+      -6px -6px 0 -5px var(--faint),
+      6px -6px 0 -5px var(--faint),
+      -6px 6px 0 -5px var(--faint),
+      6px 6px 0 -5px var(--faint);
+  }
+
+  .client { font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
+  .meta { display: flex; flex-direction: column; gap: 6px; }
+  .row { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+  .row .k { flex: none; color: var(--muted); font-size: 12.5px; }
+  .row .v { min-width: 0; overflow-wrap: anywhere; }
+
+  .bouquet { font-family: var(--font-display); font-size: 16.5px; font-weight: 500; }
+  .price { color: var(--stem-deep); font-weight: 700; font-variant-numeric: tabular-nums; }
+
+  .cardnote {
+    background: var(--surface-2); border-left: 3px solid var(--sage);
+    border-radius: 8px; padding: 9px 12px; font-size: 13.5px; color: var(--ink);
+  }
+  .cardnote b { font-weight: 600; }
+
+  .actions { display: flex; gap: 10px; }
+  .btn {
+    flex: 1; font: inherit; font-weight: 700; font-size: 14.5px;
+    text-align: center; text-decoration: none;
+    padding: 13px 14px; border-radius: 12px; cursor: pointer;
+    border: 1px solid transparent;
+  }
+  .btn--primary { background: var(--stem); color: #fff; }
+  .btn--primary:active { background: var(--stem-deep); }
+  .btn--ghost { background: transparent; color: var(--danger); border-color: var(--line); }
+  .btn--ghost:active { background: var(--danger-soft); }
+  .btn--link {
+    flex: none; display: inline-flex; align-items: center; gap: 6px;
+    font-size: 13px; font-weight: 700; color: var(--stem-deep);
+    background: var(--surface-2); border: 1px solid var(--line);
+    padding: 8px 12px; border-radius: 10px; text-decoration: none;
+  }
+  .btn--link:active { background: var(--st-new-bg); }
+
+  .done-note {
+    display: flex; align-items: center; gap: 8px;
+    color: var(--st-delivered); font-weight: 700; font-size: 14px;
+  }
+  .done-note::before {
+    content: "✓"; width: 22px; height: 22px; border-radius: 50%;
+    background: var(--st-delivered-bg); color: var(--st-delivered);
+    display: grid; place-items: center; font-size: 13px;
+  }
+
+  /* ——— Тост о новом заказе ——— */
+  .toast {
+    position: fixed; left: 50%; transform: translateX(-50%);
+    bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+    z-index: 20;
+    display: flex; align-items: center; gap: 10px;
+    background: var(--ink); color: #fff;
+    padding: 13px 18px; border-radius: 14px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.25);
+    font-size: 14px; max-width: min(92vw, 420px);
+  }
+  .toast__dot { width: 10px; height: 10px; border-radius: 50%; background: var(--sage); flex: none; }
+  .toast strong { font-weight: 700; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .card--new { animation: none; }
+  }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <div class="brand__mark" aria-hidden="true"></div>
+      <div>
+        <div class="brand__name">Гүл</div>
+        <div class="brand__sub">заказы · Тараз</div>
+      </div>
+    </div>
+    <div class="top__right">
+      <span class="badge"><b>1</b> новый</span>
+      <span class="pill"><span class="pill__dot"></span>Звук вкл</span>
+    </div>
+  </header>
+
+  <div class="toolbar">
+    <div class="search">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path>
+      </svg>
+      <input id="search" type="search" placeholder="Поиск по имени или телефону" aria-label="Поиск по имени или телефону">
+    </div>
+    <div class="filters">
+      <button class="chip active" data-filter="all">Все <span class="n">5</span></button>
+      <button class="chip" data-filter="new"><span class="dot"></span>Новый <span class="n">1</span></button>
+      <button class="chip" data-filter="assembling"><span class="dot"></span>Собирается <span class="n">1</span></button>
+      <button class="chip" data-filter="ready"><span class="dot"></span>Готов <span class="n">1</span></button>
+      <button class="chip" data-filter="delivering"><span class="dot"></span>Доставляется <span class="n">1</span></button>
+      <button class="chip" data-filter="delivered"><span class="dot"></span>Доставлен <span class="n">1</span></button>
+      <button class="chip" data-filter="cancelled"><span class="dot"></span>Отменён <span class="n">0</span></button>
+    </div>
+  </div>
+
+  <main class="feed">
+
+    <article class="card card--new" data-status="new" data-search="Айгерим Серикова +77012345678 пионы">
+      <div class="card__top">
+        <span class="card__num">TR-000042</span>
+        <span class="status status--new"><span class="dot"></span>Новый</span>
+        <span class="card__time card__time--fresh">только что</span>
+      </div>
+      <div class="growth" aria-hidden="true">
+        <span class="g-node on"></span><span class="g-node"></span><span class="g-node"></span><span class="g-node"></span><span class="g-bloom"></span>
+      </div>
+      <div class="meta">
+        <div class="client">Айгерим Серикова</div>
+        <div class="row"><span class="k">Телефон</span><a class="v" href="tel:+77012345678">+7 701 234 5678</a></div>
+        <div class="row"><span class="k">Букет</span><span class="v bouquet">«Пионы в розовом» · <span class="price">18 500 ₸</span></span></div>
+        <div class="row"><span class="k">Доставка</span><span class="v">сегодня · 15:30</span></div>
+        <div class="row"><span class="k">Адрес</span><span class="v">пр. Абая 45, кв. 12</span></div>
+      </div>
+      <div class="cardnote"><b>Открытка:</b> «С днём рождения, мама!»</div>
+      <div class="actions">
+        <a class="btn--link" href="tel:+77012345678">Позвонить</a>
+        <a class="btn--link" href="https://www.google.com/maps/search/?api=1&query=%D0%BF%D1%80.%20%D0%90%D0%B1%D0%B0%D1%8F%2045%2C%20%D0%A2%D0%B0%D1%80%D0%B0%D0%B7">Карты</a>
+      </div>
+      <div class="actions">
+        <button class="btn btn--primary">Взять в работу</button>
+        <button class="btn btn--ghost">Отменить</button>
+      </div>
+    </article>
+
+    <article class="card" data-status="assembling" data-search="Данияр Куанышев +77029998877 розы">
+      <div class="card__top">
+        <span class="card__num">TR-000041</span>
+        <span class="status status--assembling"><span class="dot"></span>Собирается</span>
+        <span class="card__time">14:20</span>
+      </div>
+      <div class="growth" aria-hidden="true">
+        <span class="g-node on"></span><span class="g-node on"></span><span class="g-node"></span><span class="g-node"></span><span class="g-bloom"></span>
+      </div>
+      <div class="meta">
+        <div class="client">Данияр Куанышев</div>
+        <div class="row"><span class="k">Телефон</span><a class="v" href="tel:+77029998877">+7 702 999 8877</a></div>
+        <div class="row"><span class="k">Букет</span><span class="v bouquet">«Розы красные, 21 шт» · <span class="price">25 000 ₸</span></span></div>
+        <div class="row"><span class="k">Доставка</span><span class="v">завтра · 10:00</span></div>
+        <div class="row"><span class="k">Адрес</span><span class="v">ул. Толе би 112</span></div>
+      </div>
+      <div class="actions">
+        <a class="btn--link" href="tel:+77029998877">Позвонить</a>
+        <a class="btn--link" href="https://www.google.com/maps/search/?api=1&query=%D1%83%D0%BB.%20%D0%A2%D0%BE%D0%BB%D0%B5%20%D0%B1%D0%B8%20112%2C%20%D0%A2%D0%B0%D1%80%D0%B0%D0%B7">Карты</a>
+      </div>
+      <div class="actions">
+        <button class="btn btn--primary">Готово</button>
+        <button class="btn btn--ghost">Отменить</button>
+      </div>
+    </article>
+
+    <article class="card" data-status="ready" data-search="Мадина Алиева +77017771122 тюльпаны">
+      <div class="card__top">
+        <span class="card__num">TR-000040</span>
+        <span class="status status--ready"><span class="dot"></span>Готов</span>
+        <span class="card__time">13:05</span>
+      </div>
+      <div class="growth" aria-hidden="true">
+        <span class="g-node on"></span><span class="g-node on"></span><span class="g-node on"></span><span class="g-node"></span><span class="g-bloom"></span>
+      </div>
+      <div class="meta">
+        <div class="client">Мадина Алиева</div>
+        <div class="row"><span class="k">Телефон</span><a class="v" href="tel:+77017771122">+7 701 777 1122</a></div>
+        <div class="row"><span class="k">Букет</span><span class="v bouquet">«Тюльпаны микс» · <span class="price">9 800 ₸</span></span></div>
+        <div class="row"><span class="k">Доставка</span><span class="v">сегодня · 17:00</span></div>
+        <div class="row"><span class="k">Адрес</span><span class="v">мкр. Астана 3</span></div>
+      </div>
+      <div class="actions">
+        <a class="btn--link" href="tel:+77017771122">Позвонить</a>
+        <a class="btn--link" href="https://www.google.com/maps/search/?api=1&query=%D0%BC%D0%BA%D1%80.%20%D0%90%D1%81%D1%82%D0%B0%D0%BD%D0%B0%203%2C%20%D0%A2%D0%B0%D1%80%D0%B0%D0%B7">Карты</a>
+      </div>
+      <div class="actions">
+        <button class="btn btn--primary">В доставку</button>
+        <button class="btn btn--ghost">Отменить</button>
+      </div>
+    </article>
+
+    <article class="card" data-status="delivering" data-search="Ерлан Бекетов +77015554433 хризантемы">
+      <div class="card__top">
+        <span class="card__num">TR-000039</span>
+        <span class="status status--delivering"><span class="dot"></span>Доставляется</span>
+        <span class="card__time">11:40</span>
+      </div>
+      <div class="growth" aria-hidden="true">
+        <span class="g-node on"></span><span class="g-node on"></span><span class="g-node on"></span><span class="g-node on"></span><span class="g-bloom"></span>
+      </div>
+      <div class="meta">
+        <div class="client">Ерлан Бекетов</div>
+        <div class="row"><span class="k">Телефон</span><a class="v" href="tel:+77015554433">+7 701 555 4433</a></div>
+        <div class="row"><span class="k">Букет</span><span class="v bouquet">«Хризантемы белые» · <span class="price">12 000 ₸</span></span></div>
+        <div class="row"><span class="k">Доставка</span><span class="v">сегодня · 13:30</span></div>
+        <div class="row"><span class="k">Адрес</span><span class="v">ул. Казыбек би 8</span></div>
+      </div>
+      <div class="actions">
+        <a class="btn--link" href="tel:+77015554433">Позвонить</a>
+        <a class="btn--link" href="https://www.google.com/maps/search/?api=1&query=%D1%83%D0%BB.%20%D0%9A%D0%B0%D0%B7%D1%8B%D0%B1%D0%B5%D0%BA%20%D0%B1%D0%B8%208%2C%20%D0%A2%D0%B0%D1%80%D0%B0%D0%B7">Карты</a>
+      </div>
+      <div class="actions">
+        <button class="btn btn--primary">Доставлен</button>
+        <button class="btn btn--ghost">Отменить</button>
+      </div>
+    </article>
+
+    <article class="card" data-status="delivered" data-search="Асель Нурланова +77013332211 невесты">
+      <div class="card__top">
+        <span class="card__num">TR-000038</span>
+        <span class="status status--delivered"><span class="dot"></span>Доставлен</span>
+        <span class="card__time">вчера</span>
+      </div>
+      <div class="growth" aria-hidden="true">
+        <span class="g-node on"></span><span class="g-node on"></span><span class="g-node on"></span><span class="g-node on"></span><span class="g-bloom on"></span>
+      </div>
+      <div class="meta">
+        <div class="client">Асель Нурланова</div>
+        <div class="row"><span class="k">Телефон</span><a class="v" href="tel:+77013332211">+7 701 333 2211</a></div>
+        <div class="row"><span class="k">Букет</span><span class="v bouquet">«Букет невесты» · <span class="price">30 000 ₸</span></span></div>
+        <div class="row"><span class="k">Доставка</span><span class="v">28 октября · 11:00</span></div>
+        <div class="row"><span class="k">Адрес</span><span class="v">ул. Сатпаева 5</span></div>
+      </div>
+      <div class="actions">
+        <a class="btn--link" href="tel:+77013332211">Позвонить</a>
+        <a class="btn--link" href="https://www.google.com/maps/search/?api=1&query=%D1%83%D0%BB.%20%D0%A1%D0%B0%D1%82%D0%BF%D0%B0%D0%B5%D0%B2%D0%B0%205%2C%20%D0%A2%D0%B0%D1%80%D0%B0%D0%B7">Карты</a>
+      </div>
+      <div class="done-note">Доставлен</div>
+    </article>
+
+  </main>
+</div>
+
+<div class="toast" id="toast" hidden>
+  <span class="toast__dot"></span>
+  <div><strong>TR-000042</strong> — новый заказ</div>
+</div>
+
+<script>
+  (function () {
+    var toast = document.getElementById("toast");
+    setTimeout(function () {
+      toast.hidden = false;
+      setTimeout(function () { toast.hidden = true; }, 3400);
+    }, 500);
+
+    var chips = Array.prototype.slice.call(document.querySelectorAll(".chip"));
+    var cards = Array.prototype.slice.call(document.querySelectorAll(".card"));
+    var search = document.getElementById("search");
+
+    function apply() {
+      var active = document.querySelector(".chip.active");
+      var f = active ? active.getAttribute("data-filter") : "all";
+      var q = (search.value || "").trim().toLowerCase();
+      cards.forEach(function (c) {
+        var okStatus = f === "all" || c.getAttribute("data-status") === f;
+        var okSearch = !q || (c.getAttribute("data-search") || "").toLowerCase().indexOf(q) !== -1;
+        c.hidden = !(okStatus && okSearch);
+      });
+    }
+
+    chips.forEach(function (chip) {
+      chip.addEventListener("click", function () {
+        chips.forEach(function (x) { x.classList.remove("active"); });
+        chip.classList.add("active");
+        apply();
+      });
+    });
+    search.addEventListener("input", apply);
+  })();
+</script>
