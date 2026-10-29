@@ -57,6 +57,7 @@ from db.database import Database
 from db.repositories import (
     BouquetRepository,
     DialogSessionRepository,
+    HandoffRepository,
     Order,
     OutboxRepository,
     UsageRepository,
@@ -212,6 +213,7 @@ class DialogService:
         self.sessions = DialogSessionRepository(db)
         self.usage = UsageRepository(db)
         self.outbox = OutboxRepository(db)
+        self.handoffs = HandoffRepository(db)
         self.orders = order_service or OrderService(db, settings, store)
         self._locks: dict[int, asyncio.Lock] = {}
 
@@ -1832,6 +1834,14 @@ class DialogService:
         """Ставит уведомление флористу и включает паузу от повторных алертов."""
         if self._handoff_active(session):
             return False
+
+        await self.handoffs.create(
+            store_id=store_id,
+            client_chat_id=chat_id,
+            client_name=draft.get("client_name") or "",
+            reason=reason,
+            last_message=self._truncate(text, 500),
+        )
 
         florist_chat_id = (
             self.store.get("florist_chat_id") or self.settings.florist_chat_id

@@ -825,3 +825,72 @@ class DialogSessionRepository:
                 """,
                 (until, utc_now(), store_id, chat_id),
             )
+
+
+class HandoffRepository:
+    """Заявки «нужен живой человек» для панели флориста."""
+
+    def __init__(self, db: Database) -> None:
+        self.db = db
+
+    async def create(
+        self,
+        store_id: int,
+        client_chat_id: int,
+        client_name: str,
+        reason: str,
+        last_message: str,
+    ) -> int:
+        """Создаёт обращение и возвращает его id."""
+        now = utc_now()
+        async with self.db.transaction() as conn:
+            cursor = await conn.execute(
+                """
+                INSERT INTO handoffs(
+                    store_id, client_chat_id, client_name, reason,
+                    last_message, status, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, 'new', ?, ?)
+                """,
+                (
+                    store_id,
+                    client_chat_id,
+                    client_name,
+                    reason,
+                    last_message,
+                    now,
+                    now,
+                ),
+            )
+            return int(cursor.lastrowid)
+
+    async def list(
+        self, store_id: int, status: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Список обращений магазина, новые сверху. status — None/''/'all' = все."""
+        query = "SELECT * FROM handoffs WHERE store_id = ?"
+        params: list[Any] = [store_id]
+
+        if status and status != "all":
+            query += " AND status = ?"
+            params.append(status)
+
+        query += " ORDER BY created_at DESC, id DESC"
+        cursor = await self.db.connection.execute(query, params)
+        return [dict(row) for row in await cursor.fetchall()]
+
+    async def resolve(self, handoff_id: int) -> dict[str, Any] | None:
+        """Переводит обращение в status='resolved', возвращает строку или None."""
+        async with self.db.transaction() as conn:
+            await conn.execute(
+                """
+                UPDATE handoffs
+                SET status = 'resolved', updated_at = ?
+                WHERE id = ?
+                """,
+                (utc_now(), handoff_id),
+            )
+            cursor = await conn.execute(
+                "SELECT * FROM handoffs WHERE id = ?", (handoff_id,)
+            )
+            row = await cursor.fetchone()
+        return dict(row) if row is not None else None

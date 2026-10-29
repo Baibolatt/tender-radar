@@ -72,7 +72,7 @@ async def test_migrations_are_idempotent(db):
 
     cursor = await db.connection.execute("PRAGMA user_version")
     row = await cursor.fetchone()
-    assert row[0] == 3
+    assert row[0] == 4
 
 
 async def test_order_has_recipient_and_idempotency_columns(db):
