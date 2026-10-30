@@ -62,6 +62,11 @@ class Settings(BaseSettings):
     # Формулировать вопросы оформления через ИИ (иначе — жёсткий шаблон).
     ai_step_questions: bool = Field(default=True, alias="AI_STEP_QUESTIONS")
 
+    # WhatsApp Cloud API
+    whatsapp_token: SecretStr = Field(default=SecretStr(""), alias="WHATSAPP_TOKEN")
+    whatsapp_phone_number_id: str = Field(default="", alias="WHATSAPP_PHONE_NUMBER_ID")
+    webhook_verify_token: SecretStr = Field(default=SecretStr(""), alias="WEBHOOK_VERIFY_TOKEN")
+
 
 @lru_cache
 def get_settings() -> Settings:
