@@ -251,10 +251,15 @@ class ConversationService:
         """Канал текущего сообщения."""
         return _CHANNEL.get()
 
-    @staticmethod
-    def _client_id_for_payload(user_id: str) -> str | int:
-        """В Telegram id клиента числовой — сохраняем прежний формат payload."""
-        return int(user_id) if user_id.isdigit() else user_id
+    def _client_id_for_payload(self, user_id: str) -> str | int:
+        """Telegram id клиента числовой; WhatsApp всегда строкой.
+
+        Отрицательные Telegram id групп тоже остаются числом.
+        """
+        if self._channel() != "telegram":
+            return user_id
+        digits = user_id.lstrip("-")
+        return int(user_id) if digits.isdigit() else user_id
 
     async def _reply(
         self, user_id: str, text: str, source_id: str

@@ -8,6 +8,7 @@ import pytest
 
 from ai.client import AICompletion, AIUnavailable
 from ai.schemas import AIResponse, OrderFields
+from bot.services.conversation_service import ConversationService
 from bot.services.datetime_parser import format_date_ru
 from bot.services.dialog_service import DialogService
 from bot.texts import (
@@ -678,3 +679,36 @@ async def test_step_question_is_ai_phrased_when_enabled(db):
 
     assert "Как к вам обращаться?" in opened.reply
     assert len(fake.calls) >= 1
+
+
+async def test_whatsapp_handoff_keeps_phone_as_string(db):
+    store = await _make_store(db)
+    service = ConversationService(db, _settings(), FakeAI(), store)
+
+    outcome = await service.process_message(
+        "77001234567", "Позовите менеджера", "whatsapp", "wamid.1"
+    )
+
+    assert outcome.handoff is True
+    pending = await OutboxRepository(db).list_pending()
+    assert len(pending) == 1
+    client_id = pending[0].payload["client_chat_id"]
+    assert client_id == "77001234567"
+    assert isinstance(client_id, str)
+
+
+async def test_telegram_handoff_keeps_numeric_id_as_int(db):
+    store = await _make_store(db)
+    service = ConversationService(db, _settings(), FakeAI(), store)
+
+    await service.process_message(
+        "555", "Позовите менеджера", "telegram", "10"
+    )
+    await service.process_message(
+        "-1001234567890", "Позовите менеджера", "telegram", "11"
+    )
+
+    pending = await OutboxRepository(db).list_pending()
+    client_ids = [message.payload["client_chat_id"] for message in pending]
+    assert client_ids == [555, -1001234567890]
+    assert all(isinstance(value, int) for value in client_ids)
