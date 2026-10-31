@@ -1,4 +1,4 @@
-"""aiohttp-вебхук WhatsApp Cloud API: проверка токена и приём сообщений.
+"""aiohttp-вебхук WhatsApp Cloud API: проверка подписи и токена, приём сообщений.
 
 Приложение собирается через фабрику и принимает зависимости снаружи, поэтому
 тесты подставляют заглушки. Вебхук всегда отвечает 200 на разобранный POST:
@@ -6,7 +6,9 @@ WhatsApp иначе повторяет доставку и заваливает 
 """
 
 import asyncio
+import hashlib
 import hmac
+import json
 import logging
 import re
 from typing import Any
@@ -50,10 +52,48 @@ async def verify_webhook(request: web.Request) -> web.Response:
     return web.Response(text="Forbidden", status=403)
 
 
+def _has_valid_signature(request: web.Request, body: bytes) -> bool:
+    """Проверяет HMAC-подпись Meta из заголовка X-Hub-Signature-256."""
+    settings: Settings = request.app[SETTINGS]
+    app_secret = settings.whatsapp_app_secret.get_secret_value()
+
+    # Локальная разработка без Meta: подпись проверить нечем. Не пропускаем
+    # молча — громко предупреждаем, что эндпоинт открыт всем.
+    if not app_secret:
+        logger.warning(
+            "WhatsApp: WHATSAPP_APP_SECRET не задан — вебхук принимает "
+            "запросы БЕЗ проверки подписи. В продакшене это небезопасно: "
+            "любой может прислать фейковое сообщение!"
+        )
+        return True
+
+    header = request.headers.get("X-Hub-Signature-256", "")
+    expected = "sha256=" + hmac.new(
+        app_secret.encode("utf-8"), body, hashlib.sha256
+    ).hexdigest()
+
+    # Сравнение постоянное по времени. Ни секрет, ни полную подпись
+    # в лог не пишем — только факт отказа.
+    if not header or not hmac.compare_digest(
+        header.encode("utf-8"), expected.encode("utf-8")
+    ):
+        logger.warning(
+            "WhatsApp: отсутствует или неверна подпись X-Hub-Signature-256"
+        )
+        return False
+    return True
+
+
 async def receive_webhook(request: web.Request) -> web.Response:
     """Принимает входящие сообщения WhatsApp и отвечает клиенту."""
+    # Читаем тело один раз: оно нужно и для подписи, и для JSON.
+    body = await request.read()
+
+    if not _has_valid_signature(request, body):
+        return web.Response(text="Forbidden", status=403)
+
     try:
-        payload = await request.json()
+        payload = json.loads(body)
     except (ValueError, TypeError) as exc:
         # Пустое тело и битый JSON — не повод для 500 и повторных доставок.
         logger.warning(

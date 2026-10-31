@@ -1,6 +1,9 @@
 """Тесты вебхука WhatsApp: проверка токена, приём сообщений и ошибки."""
 
 import asyncio
+import hashlib
+import hmac
+import json
 import logging
 
 import pytest
@@ -12,12 +15,29 @@ from bot.whatsapp_webhook import KEYBOARD_PROMPT, create_whatsapp_app
 from config import Settings
 
 VERIFY_TOKEN = "TEST_TOKEN"
+APP_SECRET = "TEST_APP_SECRET"
 SENDER = "77001234567"
 CANONICAL_SENDER = "+77001234567"
 
 
-def _settings(token: str = VERIFY_TOKEN) -> Settings:
-    return Settings(_env_file=None, webhook_verify_token=token)
+def _settings(
+    token: str = VERIFY_TOKEN, app_secret: str = ""
+) -> Settings:
+    return Settings(
+        _env_file=None,
+        webhook_verify_token=token,
+        whatsapp_app_secret=app_secret,
+    )
+
+
+def _sign(body: bytes, secret: str = APP_SECRET) -> str:
+    """Собирает заголовок подписи так же, как это делает Meta."""
+    digest = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+    return f"sha256={digest}"
+
+
+def _signed_body(payload: dict) -> bytes:
+    return json.dumps(payload).encode("utf-8")
 
 
 def _payload(
@@ -122,6 +142,17 @@ async def webhook():
         yield client, service, whatsapp
 
 
+@pytest.fixture
+async def secure_webhook():
+    """Вебхук с заданным app secret: пост без подписи должен отвергаться."""
+    settings = _settings(app_secret=APP_SECRET)
+    service = FakeConversationService()
+    whatsapp = FakeWhatsAppClient()
+    app = create_whatsapp_app(settings, service, whatsapp)
+    async with TestClient(TestServer(app)) as client:
+        yield client, service, whatsapp
+
+
 async def test_get_webhook_valid_token_returns_challenge(webhook):
     client, service, whatsapp = webhook
     resp = await client.get(
@@ -154,6 +185,99 @@ async def test_get_webhook_invalid_token_does_not_log_secret(webhook, caplog):
         )
     assert resp.status == 403
     assert VERIFY_TOKEN not in caplog.text
+
+
+async def test_post_webhook_valid_signature_is_processed(secure_webhook):
+    client, service, whatsapp = secure_webhook
+    body = _signed_body(_payload(message_id="wamid.signed"))
+
+    resp = await client.post(
+        "/webhook",
+        data=body,
+        headers={
+            "Content-Type": "application/json",
+            "X-Hub-Signature-256": _sign(body),
+        },
+    )
+
+    assert resp.status == 200
+    assert service.calls == [
+        {
+            "user_id": CANONICAL_SENDER,
+            "text": "Привет",
+            "channel": "whatsapp",
+            "source_id": "wamid.signed",
+        }
+    ]
+    assert whatsapp.text_calls == [(SENDER, "Здравствуйте!")]
+
+
+async def test_post_webhook_missing_signature_returns_403(secure_webhook):
+    client, service, whatsapp = secure_webhook
+
+    resp = await client.post("/webhook", json=_payload())
+
+    assert resp.status == 403
+    assert service.calls == []
+    assert whatsapp.text_calls == []
+
+
+async def test_post_webhook_wrong_signature_returns_403(secure_webhook):
+    client, service, whatsapp = secure_webhook
+    body = _signed_body(_payload())
+    wrong_signature = _sign(body, secret="WRONG_SECRET")
+
+    resp = await client.post(
+        "/webhook",
+        data=body,
+        headers={
+            "Content-Type": "application/json",
+            "X-Hub-Signature-256": wrong_signature,
+        },
+    )
+
+    assert resp.status == 403
+    assert service.calls == []
+    assert whatsapp.text_calls == []
+
+
+async def test_wrong_signature_does_not_log_secret_or_signature(
+    secure_webhook, caplog
+):
+    client, service, whatsapp = secure_webhook
+    body = _signed_body(_payload())
+    wrong_signature = _sign(body, secret="WRONG_SECRET")
+
+    with caplog.at_level(logging.DEBUG):
+        resp = await client.post(
+            "/webhook",
+            data=body,
+            headers={
+                "Content-Type": "application/json",
+                "X-Hub-Signature-256": wrong_signature,
+            },
+        )
+
+    assert resp.status == 403
+    assert APP_SECRET not in caplog.text
+    assert wrong_signature not in caplog.text
+
+
+async def test_empty_app_secret_warns_and_processes(webhook, caplog):
+    client, service, whatsapp = webhook
+
+    with caplog.at_level(logging.WARNING):
+        resp = await client.post("/webhook", json=_payload())
+
+    assert resp.status == 200
+    assert len(service.calls) == 1
+    assert whatsapp.text_calls == [(SENDER, "Здравствуйте!")]
+    # Предупреждение должно быть заметным и явно называть риск.
+    assert any(
+        record.levelno >= logging.WARNING
+        and "WHATSAPP_APP_SECRET" in record.getMessage()
+        for record in caplog.records
+    )
 
 
 async def test_text_message_calls_service_and_sends_reply(webhook):

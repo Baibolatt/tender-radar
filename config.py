@@ -66,6 +66,9 @@ class Settings(BaseSettings):
     whatsapp_token: SecretStr = Field(default=SecretStr(""), alias="WHATSAPP_TOKEN")
     whatsapp_phone_number_id: str = Field(default="", alias="WHATSAPP_PHONE_NUMBER_ID")
     webhook_verify_token: SecretStr = Field(default=SecretStr(""), alias="WEBHOOK_VERIFY_TOKEN")
+    whatsapp_app_secret: SecretStr = Field(
+        default=SecretStr(""), alias="WHATSAPP_APP_SECRET"
+    )
 
 
 @lru_cache
