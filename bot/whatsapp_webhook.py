@@ -8,10 +8,12 @@ WhatsApp иначе повторяет доставку и заваливает 
 import asyncio
 import hmac
 import logging
+import re
 from typing import Any
 
 from aiohttp import web
 
+from bot.services.order_service import OrderService
 from bot.services.whatsapp_client import (
     MAX_BUTTONS,
     MAX_BUTTON_TITLE_LENGTH,
@@ -120,10 +122,16 @@ async def _handle_message(
     message_id = message.get("id")
     source_id = message_id if isinstance(message_id, str) else ""
 
+    # Ключ пользователя — каноничный "+7...": два написания номера
+    # должны попадать в одну сессию и один заказ. Для ответа оставляем
+    # только цифры: Graph API не принимает ведущий "+".
+    user_id = OrderService.normalize_phone(sender) or sender
+    to = re.sub(r"\D", "", sender) or sender
+
     # Один пользователь — одна очередь: сообщения обрабатываются по порядку.
-    lock = _lock_for(request.app[LOCKS], sender)
+    lock = _lock_for(request.app[LOCKS], user_id)
     async with lock:
-        await _process_and_reply(request, sender, body, source_id)
+        await _process_and_reply(request, user_id, to, body, source_id)
 
 
 def _lock_for(locks: dict[str, asyncio.Lock], user_id: str) -> asyncio.Lock:
@@ -136,7 +144,11 @@ def _lock_for(locks: dict[str, asyncio.Lock], user_id: str) -> asyncio.Lock:
 
 
 async def _process_and_reply(
-    request: web.Request, sender: str, body: str, source_id: str
+    request: web.Request,
+    user_id: str,
+    to: str,
+    body: str,
+    source_id: str,
 ) -> None:
     """Гоняет сообщение через ConversationService и отправляет ответы."""
     service = request.app[CONVERSATION]
@@ -144,28 +156,28 @@ async def _process_and_reply(
 
     try:
         result = await service.process_message(
-            user_id=sender,
+            user_id=user_id,
             text=body,
             channel="whatsapp",
             source_id=source_id,
         )
     except Exception:
         logger.exception(
-            "WhatsApp: ошибка обработки сообщения от %s", sender
+            "WhatsApp: ошибка обработки сообщения от %s", user_id
         )
         return
 
     reply = getattr(result, "reply", "") or ""
     try:
-        await whatsapp.send_text(to=sender, text=reply)
+        await whatsapp.send_text(to=to, text=reply)
     except WhatsAppError as exc:
         logger.error(
-            "WhatsApp: не удалось отправить ответ %s: %s", sender, exc
+            "WhatsApp: не удалось отправить ответ %s: %s", to, exc
         )
         return
     except Exception:
         logger.exception(
-            "WhatsApp: неожиданная ошибка отправки ответа %s", sender
+            "WhatsApp: неожиданная ошибка отправки ответа %s", to
         )
         return
 
@@ -175,15 +187,15 @@ async def _process_and_reply(
 
     try:
         await whatsapp.send_interactive(
-            to=sender, text=KEYBOARD_PROMPT, buttons=buttons
+            to=to, text=KEYBOARD_PROMPT, buttons=buttons
         )
     except WhatsAppError as exc:
         logger.error(
-            "WhatsApp: не удалось отправить кнопки %s: %s", sender, exc
+            "WhatsApp: не удалось отправить кнопки %s: %s", to, exc
         )
     except Exception:
         logger.exception(
-            "WhatsApp: неожиданная ошибка отправки кнопок %s", sender
+            "WhatsApp: неожиданная ошибка отправки кнопок %s", to
         )
 
 

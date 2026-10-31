@@ -13,6 +13,7 @@ from config import Settings
 
 VERIFY_TOKEN = "TEST_TOKEN"
 SENDER = "77001234567"
+CANONICAL_SENDER = "+77001234567"
 
 
 def _settings(token: str = VERIFY_TOKEN) -> Settings:
@@ -164,7 +165,7 @@ async def test_text_message_calls_service_and_sends_reply(webhook):
     assert resp.status == 200
     assert service.calls == [
         {
-            "user_id": SENDER,
+            "user_id": CANONICAL_SENDER,
             "text": "Привет",
             "channel": "whatsapp",
             "source_id": "wamid.42",
@@ -326,3 +327,34 @@ async def test_same_user_messages_are_serialized(tmp_path):
 
     assert len(service.calls) == 2
     assert service.max_active == 1
+
+
+async def test_phone_spellings_share_user_and_reply_is_digits_only(tmp_path):
+    settings = _settings()
+    service = FakeConversationService(delay=0.05)
+    whatsapp = FakeWhatsAppClient()
+    app = create_whatsapp_app(settings, service, whatsapp)
+
+    async with TestClient(TestServer(app)) as client:
+        await asyncio.gather(
+            client.post(
+                "/webhook",
+                json=_payload(
+                    text="Первый", sender="77001234567", message_id="w1"
+                ),
+            ),
+            client.post(
+                "/webhook",
+                json=_payload(
+                    text="Второй", sender="+77001234567", message_id="w2"
+                ),
+            ),
+        )
+
+    # Оба написания номера — один пользователь и один замок.
+    assert {call["user_id"] for call in service.calls} == {
+        CANONICAL_SENDER
+    }
+    assert service.max_active == 1
+    # Ответ уходит только цифрами: Graph API не принимает ведущий "+".
+    assert {to for to, _ in whatsapp.text_calls} == {SENDER}

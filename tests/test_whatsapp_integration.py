@@ -23,6 +23,7 @@ from db.repositories import (
 )
 
 SENDER = "77001234567"
+CANONICAL_SENDER = "+77001234567"
 VERIFY_TOKEN = "TEST_TOKEN"
 
 
@@ -166,6 +167,31 @@ async def test_incoming_text_is_answered_by_greeting(whatsapp):
     assert stub.interactive_calls[0][1] == KEYBOARD_PROMPT
 
 
+async def test_phone_spellings_share_one_session(whatsapp):
+    client, stub, db, store = whatsapp
+
+    # Один клиент пишет сначала цифрами, потом с ведущим плюсом.
+    await client.post(
+        "/webhook",
+        json=_text_payload("Здравствуйте", "wamid.spell.1", sender=SENDER),
+    )
+    await client.post(
+        "/webhook",
+        json=_text_payload(
+            "Здравствуйте", "wamid.spell.2", sender=CANONICAL_SENDER
+        ),
+    )
+
+    cursor = await db.connection.execute(
+        "SELECT chat_id FROM dialog_sessions WHERE channel = 'whatsapp'"
+    )
+    rows = await cursor.fetchall()
+    # Сессия одна и хранится в каноничном виде.
+    assert [row["chat_id"] for row in rows] == [CANONICAL_SENDER]
+    # Ответы всегда уходят цифрами: Graph API не принимает "+".
+    assert [to for to, _ in stub.text_calls] == [SENDER, SENDER]
+
+
 async def test_full_order_flow_via_text_creates_order(whatsapp):
     client, stub, db, store = whatsapp
 
@@ -227,7 +253,7 @@ async def test_full_order_flow_via_text_creates_order(whatsapp):
     row = await cursor.fetchone()
     assert row["public_number"] == "TR-000001"
     assert row["channel"] == "whatsapp"
-    assert row["client_chat_id"] == SENDER
+    assert row["client_chat_id"] == CANONICAL_SENDER
     assert row["source_update_id"] == "wamid.order.13"
     assert row["bouquet_name"] == "Классические розы"
 
@@ -249,14 +275,14 @@ async def test_handoff_request_is_logged_and_enqueued(whatsapp):
     handoffs = await HandoffRepository(db).list(int(store["id"]))
     assert len(handoffs) == 1
     assert handoffs[0]["channel"] == "whatsapp"
-    assert handoffs[0]["client_chat_id"] == SENDER
+    assert handoffs[0]["client_chat_id"] == CANONICAL_SENDER
     assert handoffs[0]["status"] == "new"
 
     pending = await OutboxRepository(db).list_pending()
     assert len(pending) == 1
     assert pending[0].kind == "handoff"
     assert pending[0].chat_id == 999
-    assert pending[0].payload["client_chat_id"] == SENDER
+    assert pending[0].payload["client_chat_id"] == CANONICAL_SENDER
     assert isinstance(pending[0].payload["client_chat_id"], str)
 
 
