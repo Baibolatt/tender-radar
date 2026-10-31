@@ -214,7 +214,11 @@ class OrderService:
         return "\n".join(lines)
 
     async def create(
-        self, draft: dict[str, Any], chat_id: int, source_update_id: int
+        self,
+        draft: dict[str, Any],
+        chat_id: str | int,
+        source_update_id: str | int,
+        channel: str = "telegram",
     ) -> Order:
         """Создаёт заказ и уведомление одной транзакцией."""
         result = await self.validate(draft)
@@ -262,6 +266,7 @@ class OrderService:
             recipient_phone=data.get("recipient_phone"),
             is_gift=bool(data.get("is_gift")),
             idempotency_key=idempotency_key,
+            channel=channel,
         )
 
         try:
@@ -274,7 +279,7 @@ class OrderService:
             )
             if existing is None:
                 existing = await self.orders.get_by_source(
-                    store_id, source_update_id
+                    store_id, source_update_id, channel=channel
                 )
             if existing is None:
                 raise

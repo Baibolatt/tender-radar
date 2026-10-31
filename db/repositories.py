@@ -43,8 +43,10 @@ class OrderDraft:
     """Данные заказа. Цена и название сюда не входят — они берутся из БД."""
 
     store_id: int
-    source_update_id: int
-    client_chat_id: int
+    # Идентификаторы клиента и сообщения строковые: в WhatsApp это номер
+    # телефона и wamid, в Telegram — числовые id в виде строки.
+    source_update_id: str | int
+    client_chat_id: str | int
     client_name: str
     phone: str
     address: str
@@ -58,6 +60,8 @@ class OrderDraft:
     is_gift: bool = False
     # Ключ потока оформления: повторное нажатие не создаёт второй заказ.
     idempotency_key: str | None = None
+    # Канал клиента: telegram или whatsapp.
+    channel: str = "telegram"
 
 
 @dataclass(frozen=True)
@@ -67,8 +71,8 @@ class Order:
     id: int
     public_number: str
     store_id: int
-    source_update_id: int
-    client_chat_id: int
+    source_update_id: str | int
+    client_chat_id: str | int
     client_name: str
     phone: str
     address: str
@@ -84,6 +88,7 @@ class Order:
     recipient_name: str | None = None
     recipient_phone: str | None = None
     is_gift: bool = False
+    channel: str = "telegram"
 
 
 def _order_from_row(row) -> Order:
@@ -108,6 +113,7 @@ def _order_from_row(row) -> Order:
         recipient_name=row["recipient_name"],
         recipient_phone=row["recipient_phone"],
         is_gift=bool(row["is_gift"]),
+        channel=row["channel"],
     )
 
 
@@ -304,9 +310,16 @@ class OrderRepository:
             if store is None:
                 raise StoreNotFound(f"Магазин {draft.store_id} не найден")
 
+            channel = draft.channel or "telegram"
+            source_update_id = str(draft.source_update_id)
+            client_chat_id = str(draft.client_chat_id)
+
             duplicate_cursor = await conn.execute(
-                "SELECT id FROM orders WHERE store_id = ? AND source_update_id = ?",
-                (draft.store_id, draft.source_update_id),
+                """
+                SELECT id FROM orders
+                WHERE store_id = ? AND channel = ? AND source_update_id = ?
+                """,
+                (draft.store_id, channel, source_update_id),
             )
             if await duplicate_cursor.fetchone() is not None:
                 raise DuplicateOrder(
@@ -360,21 +373,23 @@ class OrderRepository:
                 order_cursor = await conn.execute(
                     """
                     INSERT INTO orders(
-                        public_number, store_id, source_update_id, client_chat_id,
-                        client_name, phone, address, delivery_date, delivery_time,
-                        bouquet_id, bouquet_name, price_kzt, card_text, comment,
-                        recipient_name, recipient_phone, is_gift, idempotency_key,
-                        status, created_at, updated_at
+                        public_number, store_id, channel, source_update_id,
+                        client_chat_id, client_name, phone, address,
+                        delivery_date, delivery_time, bouquet_id, bouquet_name,
+                        price_kzt, card_text, comment, recipient_name,
+                        recipient_phone, is_gift, idempotency_key, status,
+                        created_at, updated_at
                     ) VALUES (
-                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                        'new', ?, ?
+                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                        ?, ?, 'new', ?, ?
                     )
                     """,
                     (
                         public_number,
                         draft.store_id,
-                        draft.source_update_id,
-                        draft.client_chat_id,
+                        channel,
+                        source_update_id,
+                        client_chat_id,
                         draft.client_name,
                         draft.phone,
                         draft.address,
@@ -401,7 +416,7 @@ class OrderRepository:
             payload = {
                 "order_id": order_id,
                 "public_number": public_number,
-                "client_chat_id": draft.client_chat_id,
+                "client_chat_id": client_chat_id,
                 "client_name": draft.client_name,
                 "phone": draft.phone,
                 "address": draft.address,
@@ -436,8 +451,8 @@ class OrderRepository:
                 id=order_id,
                 public_number=public_number,
                 store_id=draft.store_id,
-                source_update_id=draft.source_update_id,
-                client_chat_id=draft.client_chat_id,
+                source_update_id=source_update_id,
+                client_chat_id=client_chat_id,
                 client_name=draft.client_name,
                 phone=draft.phone,
                 address=draft.address,
@@ -453,6 +468,7 @@ class OrderRepository:
                 recipient_name=draft.recipient_name,
                 recipient_phone=draft.recipient_phone,
                 is_gift=draft.is_gift,
+                channel=channel,
             )
 
     async def get(self, order_id: int) -> dict[str, Any] | None:
@@ -505,15 +521,18 @@ class OrderRepository:
         return dict(row) if row is not None else None
 
     async def get_by_source(
-        self, store_id: int, source_update_id: int
+        self,
+        store_id: int,
+        source_update_id: str | int,
+        channel: str = "telegram",
     ) -> Order | None:
         """Возвращает заказ по ключу идемпотентности."""
         cursor = await self.db.connection.execute(
             """
             SELECT * FROM orders
-            WHERE store_id = ? AND source_update_id = ?
+            WHERE store_id = ? AND channel = ? AND source_update_id = ?
             """,
-            (store_id, source_update_id),
+            (store_id, channel, str(source_update_id)),
         )
         row = await cursor.fetchone()
         return _order_from_row(row) if row is not None else None
@@ -699,49 +718,57 @@ class DialogSessionRepository:
     def __init__(self, db: Database) -> None:
         self.db = db
 
-    async def ensure(self, store_id: int, chat_id: int) -> dict[str, Any]:
+    async def ensure(
+        self, store_id: int, chat_id: str | int, channel: str = "telegram"
+    ) -> dict[str, Any]:
         """Создаёт сессию, если её ещё нет, и возвращает её."""
+        chat_id = str(chat_id)
         async with self.db.transaction() as conn:
             await conn.execute(
                 """
-                INSERT INTO dialog_sessions(store_id, chat_id, updated_at)
-                VALUES (?, ?, ?)
-                ON CONFLICT(store_id, chat_id) DO NOTHING
+                INSERT INTO dialog_sessions(store_id, channel, chat_id, updated_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(store_id, channel, chat_id) DO NOTHING
                 """,
-                (store_id, chat_id, utc_now()),
+                (store_id, channel, chat_id, utc_now()),
             )
             cursor = await conn.execute(
                 """
                 SELECT * FROM dialog_sessions
-                WHERE store_id = ? AND chat_id = ?
+                WHERE store_id = ? AND channel = ? AND chat_id = ?
                 """,
-                (store_id, chat_id),
+                (store_id, channel, chat_id),
             )
             row = await cursor.fetchone()
             if row is None:
                 raise RuntimeError("Не удалось создать сессию диалога")
             return dict(row)
 
-    async def get(self, store_id: int, chat_id: int) -> dict[str, Any] | None:
+    async def get(
+        self, store_id: int, chat_id: str | int, channel: str = "telegram"
+    ) -> dict[str, Any] | None:
         cursor = await self.db.connection.execute(
             """
             SELECT * FROM dialog_sessions
-            WHERE store_id = ? AND chat_id = ?
+            WHERE store_id = ? AND channel = ? AND chat_id = ?
             """,
-            (store_id, chat_id),
+            (store_id, channel, str(chat_id)),
         )
         row = await cursor.fetchone()
         return dict(row) if row is not None else None
 
-    async def mark_counted(self, store_id: int, chat_id: int, date: str) -> bool:
+    async def mark_counted(
+        self, store_id: int, chat_id: str | int, date: str, channel: str = "telegram"
+    ) -> bool:
         """Считает первый диалог клиента за день и сбрасывает счётчик AI."""
+        chat_id = str(chat_id)
         async with self.db.transaction() as conn:
             cursor = await conn.execute(
                 """
                 SELECT counted_date FROM dialog_sessions
-                WHERE store_id = ? AND chat_id = ?
+                WHERE store_id = ? AND channel = ? AND chat_id = ?
                 """,
-                (store_id, chat_id),
+                (store_id, channel, chat_id),
             )
             row = await cursor.fetchone()
             if row is None or row["counted_date"] == date:
@@ -751,9 +778,9 @@ class DialogSessionRepository:
                 """
                 UPDATE dialog_sessions
                 SET counted_date = ?, ai_calls = 0, updated_at = ?
-                WHERE store_id = ? AND chat_id = ?
+                WHERE store_id = ? AND channel = ? AND chat_id = ?
                 """,
-                (date, utc_now(), store_id, chat_id),
+                (date, utc_now(), store_id, channel, chat_id),
             )
             await conn.execute(
                 """
@@ -766,16 +793,18 @@ class DialogSessionRepository:
             )
             return True
 
-    async def add_ai_call(self, store_id: int, chat_id: int, date: str) -> None:
+    async def add_ai_call(
+        self, store_id: int, chat_id: str | int, date: str, channel: str = "telegram"
+    ) -> None:
         """Увеличивает счётчики вызовов модели на диалог и на день."""
         async with self.db.transaction() as conn:
             await conn.execute(
                 """
                 UPDATE dialog_sessions
                 SET ai_calls = ai_calls + 1, updated_at = ?
-                WHERE store_id = ? AND chat_id = ?
+                WHERE store_id = ? AND channel = ? AND chat_id = ?
                 """,
-                (utc_now(), store_id, chat_id),
+                (utc_now(), store_id, channel, str(chat_id)),
             )
             await conn.execute(
                 """
@@ -790,10 +819,11 @@ class DialogSessionRepository:
     async def save_conversation(
         self,
         store_id: int,
-        chat_id: int,
+        chat_id: str | int,
         state: str,
         draft: dict[str, Any],
         history: list[dict[str, str]],
+        channel: str = "telegram",
     ) -> None:
         """Сохраняет состояние, черновик и историю диалога."""
         async with self.db.transaction() as conn:
@@ -801,7 +831,7 @@ class DialogSessionRepository:
                 """
                 UPDATE dialog_sessions
                 SET state = ?, draft_json = ?, history_json = ?, updated_at = ?
-                WHERE store_id = ? AND chat_id = ?
+                WHERE store_id = ? AND channel = ? AND chat_id = ?
                 """,
                 (
                     state,
@@ -809,21 +839,26 @@ class DialogSessionRepository:
                     json.dumps(history, ensure_ascii=False),
                     utc_now(),
                     store_id,
-                    chat_id,
+                    channel,
+                    str(chat_id),
                 ),
             )
 
     async def set_handoff_until(
-        self, store_id: int, chat_id: int, until: str | None
+        self,
+        store_id: int,
+        chat_id: str | int,
+        until: str | None,
+        channel: str = "telegram",
     ) -> None:
         async with self.db.transaction() as conn:
             await conn.execute(
                 """
                 UPDATE dialog_sessions
                 SET handoff_until = ?, updated_at = ?
-                WHERE store_id = ? AND chat_id = ?
+                WHERE store_id = ? AND channel = ? AND chat_id = ?
                 """,
-                (until, utc_now(), store_id, chat_id),
+                (until, utc_now(), store_id, channel, str(chat_id)),
             )
 
 
@@ -836,10 +871,11 @@ class HandoffRepository:
     async def create(
         self,
         store_id: int,
-        client_chat_id: int,
+        client_chat_id: str | int,
         client_name: str,
         reason: str,
         last_message: str,
+        channel: str = "telegram",
     ) -> int:
         """Создаёт обращение и возвращает его id."""
         now = utc_now()
@@ -847,13 +883,14 @@ class HandoffRepository:
             cursor = await conn.execute(
                 """
                 INSERT INTO handoffs(
-                    store_id, client_chat_id, client_name, reason,
+                    store_id, channel, client_chat_id, client_name, reason,
                     last_message, status, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, 'new', ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, 'new', ?, ?)
                 """,
                 (
                     store_id,
-                    client_chat_id,
+                    channel,
+                    str(client_chat_id),
                     client_name,
                     reason,
                     last_message,
