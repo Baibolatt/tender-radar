@@ -12,6 +12,26 @@ Telegram-бот принимает заказы на цветы, веб-пане
 
 Токен и ключ ИИ — в `.env` (см. `.env.example`).
 
+## WhatsApp Webhook Setup
+
+Вебхук WhatsApp Cloud API запускается отдельным процессом на порту 8080 и использует ту же базу, что и бот.
+
+```bash
+.venv/bin/python -m bot.run_web
+```
+
+### В Codespaces
+
+1. Запустите вебхук: `.venv/bin/python -m bot.run_web`.
+2. На вкладке **Ports** найдите порт `8080` и сделайте его **Public**.
+3. Скопируйте публичный URL порта, например `https://xxx-8080.app.github.dev`.
+4. В Meta Developer Console → WhatsApp → Configuration → Webhook укажите:
+   - **Callback URL:** `https://xxx-8080.app.github.dev/webhook`
+   - **Verify Token:** значение `WEBHOOK_VERIFY_TOKEN` из `.env`
+   - **Subscribe to:** `messages`
+
+Токен хранится только в переменных окружения (`.env`), в репозиторий его не коммитят.
+
 ## Панель заказов флориста
 
 Веб-панель на aiohttp: флорист видит заказы, меняет статус одной кнопкой, ищет по имени/телефону и фильтрует по статусу. Новые заказы появляются мгновенно — со звуком и подсветкой.
